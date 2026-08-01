@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+
+# IDE and OS
+.idea/
+.vscode/settings.json
+.DS_Store
+
+# Local secrets and agent state
+.env
+.env.*
+!.env.example
+CLAUDE.local.md
+*.local.md
+.agent-state/
+
+# Home Assistant local runtime
+config/
