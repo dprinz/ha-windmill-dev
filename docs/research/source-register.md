@@ -13,6 +13,17 @@ Version-sensitive implementation claims must be traced to primary sources. Re-ch
 | Windmill webhooks and job execution | https://www.windmill.dev/docs/core_concepts/webhooks | 2026-08-01 | async/sync execution, bearer auth and job IDs |
 | Windmill user tokens | https://www.windmill.dev/docs/core_concepts/user_tokens | 2026-08-01 | least-privilege scopes and token handling |
 | Windmill self-hosted health endpoints | https://www.windmill.dev/docs/advanced/self_host | 2026-08-01 | unauthenticated and authenticated health behavior |
+| Windmill API v1.775.2 OpenAPI | https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-api/openapi.yaml | 2026-08-01 | endpoint, parameter, pagination and response contracts |
+| Windmill API v1.775.2 router/source | https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-api/src/lib.rs | 2026-08-01 | route layering, version, edition and update behavior |
+| Windmill API v1.775.2 health source | https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-api/src/health.rs | 2026-08-01 | health caching, status calculation and authorization ambiguity |
+| Windmill v1.775.2 release | https://github.com/windmill-labs/windmill/releases/tag/v1.775.2 | 2026-08-01 | immutable research baseline |
+| Windmill jobs | https://www.windmill.dev/docs/core_concepts/jobs | 2026-08-01 | job lifecycle semantics |
+| Windmill versioning | https://www.windmill.dev/docs/core_concepts/versioning | 2026-08-01 | script hashes and flow versions |
+| Windmill worker groups | https://www.windmill.dev/docs/core_concepts/worker_groups | 2026-08-01 | worker-group and edition behavior |
+| Windmill v1.775.2 scope middleware | https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-api-auth/src/scopes.rs | 2026-08-01 | route-domain/action mapping and restricted-token enforcement |
+| Windmill v1.775.2 worker handlers | https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-api-workers/src/lib.rs | 2026-08-01 | worker visibility and DevOps-role checks |
+| Windmill v1.775.2 config handlers | https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-api-configs/src/lib.rs | 2026-08-01 | worker-group access and config obfuscation |
+| Windmill v1.775.2 authentication extractor | https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-api-auth/src/auth.rs | 2026-08-01 | route-scope checks applied to granular-scoped tokens |
 
 ## Research note requirements
 
