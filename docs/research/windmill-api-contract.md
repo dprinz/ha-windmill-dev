@@ -335,16 +335,29 @@ before relying on the capability:
 
 | Experiment | Safe method | Owner |
 | --- | --- | --- |
-| Confirm `/version` authentication behavior and health availability on supported minimum versions | Read-only requests with no token and a restricted token | WMHA-0002/0003 compatibility tests |
-| Confirm exact restricted-token scopes for `whoami`, hash/version execution and cancellation | Disposable workspace/token against a disposable Docker deployment | WMHA-0003/0009/0010 |
-| Confirm detailed-health behavior for unscoped, granular-scoped and administrative tokens | Read-only probes; expect granular-scoped v1.775.2 tokens to fail before the handler; never log payloads | WMHA-0003/0005 |
-| Confirm Cloud tenant behavior for instance-global health/workers | Read-only probe on a test Cloud workspace | WMHA-0003/0005/0006 |
+| Confirm public `/version` behavior and health availability on supported minimum versions | Public/no-token read-only slice observed in WMHA-0003; repeat at the eventual minimum version | WMHA-0005 compatibility gate |
+| Confirm exact restricted-token scope for `whoami` | Disposable workspace/token before capability onboarding is exposed | WMHA-0004 |
+| Confirm exact restricted-token scopes for hash/version execution and cancellation | Disposable workspace/token and target against a disposable deployment | WMHA-0009/0010 |
+| Confirm detailed-health behavior for unscoped, granular-scoped and administrative tokens | Read-only probes; expect granular-scoped v1.775.2 tokens to fail before the handler; never log payloads | WMHA-0005 |
+| Confirm Cloud tenant behavior for instance-global health/workers | Read-only probe on a test Cloud workspace | WMHA-0005/0006 |
 | Validate `/uptodate` output and failure modes without depending on GitHub availability | Mocked client tests plus disposable self-host instance | WMHA-0011 |
 
 An attempted read-only probe on 2026-08-01 using the provided SSH aliases `root@windmill` and
 `root@homeassistant` did not reach either host because those aliases were not resolvable in the
 agent environment. No remote command ran and no system was changed. Host access is therefore not
 claimed as validation evidence.
+
+A follow-up read-only probe on 2026-08-02 reached the user-provided test instance without reading
+or sending credentials. The running CE `v1.768.0` server returned `200` for `/api/version` and
+`/api/health/status?force=false`; detailed health, bounded worker listing and bounded workspace job
+listing each returned `401` without a token. No response body from a protected endpoint was read,
+no container or service was changed, and the observation does not replace the pinned v1.775.2
+source contract. Restricted-token write behavior remains assigned to WMHA-0009 and WMHA-0010.
+No disposable restricted token or Cloud test credential was available without reading or changing
+existing credentials. Restricted-token `whoami` and capability presentation therefore remain an
+explicit WMHA-0004 gate; detailed-health token variants and Cloud behavior remain explicit
+WMHA-0005/0006 gates. The client never sends a token to the public `/version` endpoint, so a
+"restricted-token version probe" is not part of its policy.
 
 ## Requirement traceability
 

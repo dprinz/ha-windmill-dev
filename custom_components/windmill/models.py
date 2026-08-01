@@ -2,7 +2,14 @@
 
 from dataclasses import dataclass
 
-from .api import WindmillClient, WindmillIdentity
+from .api import (
+    CapabilityMatrix,
+    WindmillClient,
+    WindmillConnection,
+    WindmillIdentity,
+    WindmillServerInfo,
+)
+from .coordinator import WindmillCapabilityCoordinator
 
 
 @dataclass(slots=True)
@@ -10,4 +17,22 @@ class WindmillRuntimeData:
     """Typed runtime data owned by one Windmill config entry."""
 
     client: WindmillClient
-    identity: WindmillIdentity
+    connection: WindmillConnection
+    capability_coordinator: WindmillCapabilityCoordinator
+
+    @property
+    def identity(self) -> WindmillIdentity:
+        """Return the validated workspace identity."""
+        return self.connection.identity
+
+    @property
+    def server(self) -> WindmillServerInfo:
+        """Return the validated server facts."""
+        return self.connection.server
+
+    @property
+    def capabilities(self) -> CapabilityMatrix:
+        """Return the coordinator's current capability snapshot."""
+        if self.capability_coordinator.data is None:
+            raise RuntimeError("Windmill capabilities are not initialized")
+        return self.capability_coordinator.data

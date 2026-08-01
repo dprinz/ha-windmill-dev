@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import json
 import re
+from collections.abc import Awaitable, Mapping
 from dataclasses import dataclass
+from datetime import datetime
+from enum import StrEnum
 from typing import Any
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 import aiohttp
 
 from .const import DEFAULT_CONNECT_TIMEOUT, DEFAULT_REQUEST_TIMEOUT, MAX_RESPONSE_BYTES
+
+MAX_PAGE_SIZE = 100
+MAX_RETRY_AFTER = 300.0
 
 
 class WindmillError(Exception):
@@ -42,12 +49,28 @@ class WindmillWorkspaceError(WindmillError):
     """Raised when the configured workspace is unavailable."""
 
 
+class WindmillNotFoundError(WindmillError):
+    """Raised when a requested endpoint or resource is unavailable."""
+
+
 class WindmillRequestError(WindmillError):
     """Raised when Windmill rejects a request."""
 
 
+class WindmillConflictError(WindmillError):
+    """Raised when a Windmill request conflicts with current state."""
+
+
 class WindmillRateLimitError(WindmillError):
     """Raised when Windmill rate-limits a request."""
+
+    def __init__(
+        self,
+        message: str = "Windmill rate limited the request",
+        retry_after: float | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
 
 
 class WindmillServerError(WindmillError):
@@ -58,6 +81,42 @@ class WindmillProtocolError(WindmillError):
     """Raised when Windmill returns an unexpected response contract."""
 
 
+class WindmillEdition(StrEnum):
+    """Edition labels verified in the Windmill version response."""
+
+    COMMUNITY = "ce"
+    ENTERPRISE = "ee"
+
+
+class WindmillHealthState(StrEnum):
+    """Bounded states returned by Windmill health endpoints."""
+
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    UNHEALTHY = "unhealthy"
+
+
+class CapabilityStatus(StrEnum):
+    """Stable five-state capability lattice."""
+
+    AVAILABLE = "available"
+    UNAUTHORIZED = "unauthorized"
+    UNSUPPORTED = "unsupported"
+    TEMPORARILY_UNAVAILABLE = "temporarily_unavailable"
+    NOT_APPLICABLE = "not_applicable"
+
+
+class CapabilityReason(StrEnum):
+    """Bounded reasons for capability decisions."""
+
+    PROBE_SUCCEEDED = "probe_succeeded"
+    PERMISSION_DENIED = "permission_denied"
+    ENDPOINT_MISSING = "endpoint_missing"
+    TEMPORARY_FAILURE = "temporary_failure"
+    UNEXPECTED_RESPONSE = "unexpected_response"
+    CONTEXT_REQUIRED = "context_required"
+
+
 @dataclass(frozen=True, slots=True)
 class WindmillIdentity:
     """Bounded identity fields returned by the Windmill whoami endpoint."""
@@ -65,6 +124,88 @@ class WindmillIdentity:
     username: str
     is_admin: bool
     is_super_admin: bool
+
+
+@dataclass(frozen=True, slots=True)
+class WindmillServerInfo:
+    """Allowlisted facts parsed from the public version endpoint."""
+
+    edition: WindmillEdition
+    version: str
+
+
+@dataclass(frozen=True, slots=True)
+class WindmillConnection:
+    """Validated connection facts retained by config-entry runtime data."""
+
+    identity: WindmillIdentity
+    server: WindmillServerInfo
+
+
+@dataclass(frozen=True, slots=True)
+class WindmillHealthStatus:
+    """Bounded projection of the coarse health response."""
+
+    status: WindmillHealthState
+    checked_at: datetime
+    database_healthy: bool
+    workers_alive: int
+
+
+@dataclass(frozen=True, slots=True)
+class PageRequest:
+    """Validated Windmill page parameters shared by bounded list operations."""
+
+    page: int = 1
+    per_page: int = 30
+
+    def __post_init__(self) -> None:
+        if isinstance(self.page, bool) or not isinstance(self.page, int) or self.page < 1:
+            raise ValueError("Page must be a positive integer")
+        if (
+            isinstance(self.per_page, bool)
+            or not isinstance(self.per_page, int)
+            or not 1 <= self.per_page <= MAX_PAGE_SIZE
+        ):
+            raise ValueError(f"Page size must be between 1 and {MAX_PAGE_SIZE}")
+
+    def as_params(self) -> dict[str, int]:
+        """Return query parameters for a Windmill list request."""
+        return {"page": self.page, "per_page": self.per_page}
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityAvailability:
+    """One capability state with a bounded non-sensitive reason."""
+
+    status: CapabilityStatus
+    reason: CapabilityReason
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityMatrix:
+    """Explicit capabilities consumed by later Home Assistant platforms."""
+
+    health: CapabilityAvailability
+    detailed_health: CapabilityAvailability
+    workers: CapabilityAvailability
+    runs: CapabilityAvailability
+    script_discovery: CapabilityAvailability
+    flow_discovery: CapabilityAvailability
+    script_execution: CapabilityAvailability
+    flow_execution: CapabilityAvailability
+    cancellation: CapabilityAvailability
+    update_visibility: CapabilityAvailability
+
+
+@dataclass(frozen=True, slots=True)
+class _WindmillResponse:
+    """Bounded internal response representation."""
+
+    status: int
+    content_type: str
+    payload: bytes
+    retry_after: float | None
 
 
 def _is_loopback(host: str) -> bool:
@@ -141,7 +282,7 @@ def normalize_workspace(value: str) -> str:
 
 
 class WindmillClient:
-    """Small asynchronous client for the verified Windmill setup contract."""
+    """Typed asynchronous client for the verified Windmill contract."""
 
     def __init__(
         self,
@@ -167,100 +308,369 @@ class WindmillClient:
         """Return the stable non-secret identity used for duplicate detection."""
         return (self.base_url, self.workspace)
 
+    async def async_connect(self) -> WindmillConnection:
+        """Validate the deployment, token and workspace and return bounded facts."""
+        server = await self.async_get_server_info()
+        identity = await self._async_get_identity()
+        return WindmillConnection(identity=identity, server=server)
+
     async def async_validate(self) -> WindmillIdentity:
-        """Validate the token and workspace through the verified whoami endpoint."""
-        await self._async_validate_version()
-        url = f"{self.base_url}/api/w/{quote(self.workspace, safe='')}/users/whoami"
-        headers = {
-            "Accept": "application/json",
-            "Authorization": f"Bearer {self._token}",
-        }
+        """Validate setup while preserving the WMHA-0002 client interface."""
+        return (await self.async_connect()).identity
 
-        status, content_type, payload = await self._async_get_bounded(url, headers)
-        self._raise_for_status(status)
-        if content_type != "application/json" and not content_type.endswith("+json"):
-            raise WindmillProtocolError("Windmill returned an unexpected content type")
-
-        try:
-            data: Any = json.loads(payload)
-        except (UnicodeDecodeError, json.JSONDecodeError) as err:
-            raise WindmillProtocolError("Windmill returned invalid JSON") from err
-        return self._parse_identity(data)
-
-    async def _async_validate_version(self) -> None:
-        """Confirm the base deployment before classifying workspace-scoped failures."""
-        status, content_type, payload = await self._async_get_bounded(
-            f"{self.base_url}/api/version",
-            {"Accept": "text/plain"},
+    async def async_get_server_info(self) -> WindmillServerInfo:
+        """Read and parse the public Windmill version endpoint."""
+        response = await self._async_get(
+            "/api/version",
+            authenticated=False,
+            accept="text/plain",
         )
-        if status == 429:
-            raise WindmillRateLimitError("Windmill rate limited the request")
-        if 500 <= status <= 599:
-            raise WindmillServerError("Windmill server error")
-        if status != 200:
+        if response.status in {401, 403, 404}:
             raise WindmillProtocolError("Windmill version endpoint is unavailable")
-        if content_type != "text/plain":
-            raise WindmillProtocolError("Windmill returned an unexpected version content type")
+        self._raise_for_status(response, not_found=WindmillNotFoundError)
+        self._require_content_type(response, "text/plain")
         try:
-            version = payload.decode("utf-8").strip()
+            value = response.payload.decode("utf-8").strip()
         except UnicodeDecodeError as err:
             raise WindmillProtocolError("Windmill returned an invalid version") from err
-        if not re.fullmatch(r"(?:CE|EE)\s+\S+", version):
+        match = re.fullmatch(r"(?P<edition>CE|EE)\s+(?P<version>\S+)", value)
+        if match is None or len(match.group("version")) > 128:
             raise WindmillProtocolError("Windmill returned an invalid version")
+        edition = (
+            WindmillEdition.COMMUNITY
+            if match.group("edition") == "CE"
+            else WindmillEdition.ENTERPRISE
+        )
+        return WindmillServerInfo(edition=edition, version=match.group("version"))
 
-    async def _async_get_bounded(self, url: str, headers: dict[str, str]) -> tuple[int, str, bytes]:
-        """GET one bounded response without following credential-sensitive redirects."""
+    async def async_get_health_status(self) -> WindmillHealthStatus:
+        """Return the bounded public coarse-health projection."""
+        response = await self._async_get(
+            "/api/health/status",
+            authenticated=False,
+            accept="application/json",
+            params={"force": "false"},
+            body_statuses=frozenset({200, 503}),
+        )
+        self._raise_for_status(
+            response,
+            success_statuses=frozenset({200, 503}),
+            not_found=WindmillNotFoundError,
+            authentication_required=False,
+        )
+        return self._parse_health_status(self._decode_json(response))
+
+    async def async_discover_capabilities(self) -> CapabilityMatrix:
+        """Probe a fixed set of safe read-only capabilities."""
+        page = PageRequest(page=1, per_page=1)
+        workspace = quote(self.workspace, safe="")
+        runs_params: dict[str, str | int] = {
+            **page.as_params(),
+            "has_null_parent": "true",
+            "is_flow_step": "false",
+        }
+        tasks = [
+            asyncio.create_task(self._probe(self.async_get_health_status())),
+            asyncio.create_task(
+                self._probe_json_object(
+                    "/api/health/detailed",
+                    authenticated=True,
+                    body_statuses=frozenset({200, 503}),
+                )
+            ),
+            asyncio.create_task(
+                self._probe_json_list(
+                    "/api/workers/list",
+                    params={**page.as_params(), "ping_since": 300},
+                )
+            ),
+            asyncio.create_task(
+                self._probe_json_list(
+                    f"/api/w/{workspace}/jobs/list",
+                    params=runs_params,
+                )
+            ),
+            asyncio.create_task(
+                self._probe_json_list(
+                    f"/api/w/{workspace}/scripts/list",
+                    params=page.as_params(),
+                )
+            ),
+            asyncio.create_task(
+                self._probe_json_list(
+                    f"/api/w/{workspace}/flows/list",
+                    params=page.as_params(),
+                )
+            ),
+            asyncio.create_task(self._probe_update_visibility()),
+        ]
+        try:
+            probes = await asyncio.gather(*tasks)
+        except BaseException:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
+        health, detailed_health, workers, runs, scripts, flows, update_visibility = probes
+        return CapabilityMatrix(
+            health=health,
+            detailed_health=detailed_health,
+            workers=workers,
+            runs=runs,
+            script_discovery=scripts,
+            flow_discovery=flows,
+            script_execution=self._require_context(),
+            flow_execution=self._require_context(),
+            cancellation=self._require_context(),
+            update_visibility=update_visibility,
+        )
+
+    async def _async_get_identity(self) -> WindmillIdentity:
+        """Validate the token and workspace through the verified whoami endpoint."""
+        workspace = quote(self.workspace, safe="")
+        response = await self._async_get(
+            f"/api/w/{workspace}/users/whoami",
+            authenticated=True,
+            accept="application/json",
+        )
+        self._raise_for_status(response, not_found=WindmillWorkspaceError)
+        return self._parse_identity(self._decode_json(response))
+
+    async def _probe_json_object(
+        self,
+        path: str,
+        *,
+        authenticated: bool = True,
+        body_statuses: frozenset[int] = frozenset({200}),
+    ) -> CapabilityAvailability:
+        """Probe an endpoint whose successful response must be a JSON object."""
+
+        async def validate() -> None:
+            response = await self._async_get(
+                path,
+                authenticated=authenticated,
+                accept="application/json",
+                body_statuses=body_statuses,
+            )
+            self._raise_for_status(
+                response,
+                success_statuses=body_statuses,
+                not_found=WindmillNotFoundError,
+            )
+            self._validate_detailed_health(self._decode_json(response))
+
+        return await self._probe(validate())
+
+    async def _probe_json_list(
+        self,
+        path: str,
+        *,
+        params: Mapping[str, str | int],
+    ) -> CapabilityAvailability:
+        """Probe a bounded list endpoint and discard every returned row."""
+
+        async def validate() -> None:
+            response = await self._async_get(
+                path,
+                authenticated=True,
+                accept="application/json",
+                params=params,
+            )
+            self._raise_for_status(response, not_found=WindmillNotFoundError)
+            payload = self._decode_json(response)
+            if not isinstance(payload, list) or len(payload) > 1:
+                raise WindmillProtocolError("Windmill returned an invalid bounded list")
+
+        return await self._probe(validate())
+
+    async def _probe_update_visibility(self) -> CapabilityAvailability:
+        """Probe only the bounded update-check contract, not deployment eligibility."""
+
+        async def validate() -> None:
+            response = await self._async_get(
+                "/api/uptodate",
+                authenticated=False,
+                accept="text/plain",
+            )
+            self._raise_for_status(
+                response,
+                not_found=WindmillNotFoundError,
+                authentication_required=False,
+            )
+            self._require_content_type(response, "text/plain")
+            try:
+                value = response.payload.decode("utf-8").strip()
+            except UnicodeDecodeError as err:
+                raise WindmillProtocolError("Windmill returned an invalid update status") from err
+            if value != "yes" and re.fullmatch(r"Update:\s+\S+\s+->\s+\S+", value) is None:
+                raise WindmillProtocolError("Windmill returned an invalid update status")
+
+        return await self._probe(validate())
+
+    async def _probe(self, operation: Awaitable[object]) -> CapabilityAvailability:
+        """Convert optional endpoint outcomes into the capability lattice."""
+        try:
+            await operation
+        except WindmillAuthenticationError:
+            raise
+        except WindmillAuthorizationError:
+            return CapabilityAvailability(
+                CapabilityStatus.UNAUTHORIZED,
+                CapabilityReason.PERMISSION_DENIED,
+            )
+        except WindmillNotFoundError:
+            return CapabilityAvailability(
+                CapabilityStatus.UNSUPPORTED,
+                CapabilityReason.ENDPOINT_MISSING,
+            )
+        except (
+            WindmillConnectionError,
+            WindmillRateLimitError,
+            WindmillServerError,
+        ):
+            return CapabilityAvailability(
+                CapabilityStatus.TEMPORARILY_UNAVAILABLE,
+                CapabilityReason.TEMPORARY_FAILURE,
+            )
+        except (
+            WindmillConflictError,
+            WindmillProtocolError,
+            WindmillRequestError,
+        ):
+            return CapabilityAvailability(
+                CapabilityStatus.UNSUPPORTED,
+                CapabilityReason.UNEXPECTED_RESPONSE,
+            )
+        return CapabilityAvailability(
+            CapabilityStatus.AVAILABLE,
+            CapabilityReason.PROBE_SUCCEEDED,
+        )
+
+    @staticmethod
+    def _require_context() -> CapabilityAvailability:
+        """Never infer a target-specific write permission from a read probe."""
+        return CapabilityAvailability(
+            CapabilityStatus.NOT_APPLICABLE,
+            CapabilityReason.CONTEXT_REQUIRED,
+        )
+
+    async def _async_get(
+        self,
+        path: str,
+        *,
+        authenticated: bool,
+        accept: str,
+        params: Mapping[str, str | int] | None = None,
+        body_statuses: frozenset[int] = frozenset({200}),
+    ) -> _WindmillResponse:
+        """GET one bounded response through the central transport path."""
+        if not path.startswith("/") or "?" in path or "#" in path:
+            raise WindmillProtocolError("Windmill client path is invalid")
+        headers = {"Accept": accept}
+        if authenticated:
+            headers["Authorization"] = f"Bearer {self._token}"
 
         try:
             async with self._session.get(
-                url,
+                f"{self.base_url}{path}",
                 headers=headers,
+                params=params,
                 timeout=self._timeout,
                 allow_redirects=False,
             ) as response:
-                status = response.status
-                if status != 200:
-                    return status, "", b""
+                retry_after = self._parse_retry_after(response.headers.get("Retry-After"))
+                if response.status not in body_statuses:
+                    return _WindmillResponse(response.status, "", b"", retry_after)
                 content_type = (
                     response.headers.get("Content-Type", "").partition(";")[0].strip().lower()
                 )
                 content_length = response.headers.get("Content-Length")
                 if content_length is not None:
                     try:
-                        if int(content_length) > MAX_RESPONSE_BYTES:
-                            raise WindmillProtocolError("Windmill response is too large")
+                        length = int(content_length)
                     except ValueError as err:
                         raise WindmillProtocolError(
                             "Windmill returned an invalid content length"
                         ) from err
-                payload = await response.content.read(MAX_RESPONSE_BYTES + 1)
+                    if length < 0 or length > MAX_RESPONSE_BYTES:
+                        raise WindmillProtocolError("Windmill response is too large")
+                payload_buffer = bytearray()
+                content = response.content
+                while True:
+                    remaining = MAX_RESPONSE_BYTES + 1 - len(payload_buffer)
+                    chunk = await content.read(min(8192, remaining))
+                    if not chunk:
+                        break
+                    payload_buffer.extend(chunk)
+                    if len(payload_buffer) > MAX_RESPONSE_BYTES:
+                        raise WindmillProtocolError("Windmill response is too large")
         except TimeoutError as err:
             raise WindmillTimeoutError("Windmill request timed out") from err
         except aiohttp.ClientError as err:
             raise WindmillConnectionError("Unable to connect to Windmill") from err
 
-        if len(payload) > MAX_RESPONSE_BYTES:
-            raise WindmillProtocolError("Windmill response is too large")
-        return status, content_type, payload
+        return _WindmillResponse(response.status, content_type, bytes(payload_buffer), retry_after)
 
     @staticmethod
-    def _raise_for_status(status: int) -> None:
+    def _parse_retry_after(value: str | None) -> float | None:
+        """Parse only bounded delta-seconds from an untrusted Retry-After header."""
+        if value is None:
+            return None
+        try:
+            retry_after = float(value)
+        except ValueError:
+            return None
+        if not 0 <= retry_after <= MAX_RETRY_AFTER:
+            return None
+        return retry_after
+
+    @staticmethod
+    def _raise_for_status(
+        response: _WindmillResponse,
+        *,
+        success_statuses: frozenset[int] = frozenset({200}),
+        not_found: type[WindmillError],
+        authentication_required: bool = True,
+    ) -> None:
         """Map HTTP statuses to the stable typed client taxonomy."""
-        if status == 200:
+        status = response.status
+        if status in success_statuses:
             return
         if status == 401:
-            raise WindmillAuthenticationError("Windmill rejected the token")
+            if authentication_required:
+                raise WindmillAuthenticationError("Windmill rejected the token")
+            raise WindmillAuthorizationError("Windmill denied the public probe")
         if status == 403:
-            raise WindmillAuthorizationError("Windmill denied workspace access")
+            raise WindmillAuthorizationError("Windmill denied the request")
         if status == 404:
-            raise WindmillWorkspaceError("Windmill workspace was not found")
+            raise not_found("Windmill endpoint or resource was not found")
+        if status == 409:
+            raise WindmillConflictError("Windmill request conflicts with current state")
         if status == 429:
-            raise WindmillRateLimitError("Windmill rate limited the request")
-        if status in {400, 409, 422}:
+            raise WindmillRateLimitError(retry_after=response.retry_after)
+        if status in {400, 422}:
             raise WindmillRequestError("Windmill rejected the request")
         if 500 <= status <= 599:
             raise WindmillServerError("Windmill server error")
         raise WindmillProtocolError("Windmill returned an unexpected status")
+
+    @staticmethod
+    def _require_content_type(response: _WindmillResponse, expected: str) -> None:
+        """Require an exact or structured-suffix response content type."""
+        if response.content_type == expected:
+            return
+        if expected == "application/json" and response.content_type.endswith("+json"):
+            return
+        raise WindmillProtocolError("Windmill returned an unexpected content type")
+
+    @classmethod
+    def _decode_json(cls, response: _WindmillResponse) -> Any:
+        """Decode one bounded JSON success response."""
+        cls._require_content_type(response, "application/json")
+        try:
+            return json.loads(response.payload)
+        except (UnicodeDecodeError, json.JSONDecodeError) as err:
+            raise WindmillProtocolError("Windmill returned invalid JSON") from err
 
     @staticmethod
     def _parse_identity(data: Any) -> WindmillIdentity:
@@ -270,7 +680,7 @@ class WindmillClient:
         username = data.get("username")
         is_admin = data.get("is_admin", False)
         is_super_admin = data.get("is_super_admin", False)
-        if not isinstance(username, str) or not username.strip():
+        if not isinstance(username, str) or not username.strip() or len(username) > 256:
             raise WindmillProtocolError("Windmill returned an invalid identity")
         if not isinstance(is_admin, bool) or not isinstance(is_super_admin, bool):
             raise WindmillProtocolError("Windmill returned invalid role fields")
@@ -279,3 +689,65 @@ class WindmillClient:
             is_admin=is_admin,
             is_super_admin=is_super_admin,
         )
+
+    @staticmethod
+    def _parse_health_status(data: Any) -> WindmillHealthStatus:
+        """Allowlist and validate the coarse health response."""
+        if not isinstance(data, dict):
+            raise WindmillProtocolError("Windmill returned an invalid health status")
+        raw_status = data.get("status")
+        if not isinstance(raw_status, str):
+            raise WindmillProtocolError("Windmill returned an invalid health state")
+        try:
+            status = WindmillHealthState(raw_status)
+        except (TypeError, ValueError) as err:
+            raise WindmillProtocolError("Windmill returned an invalid health state") from err
+        checked_at = WindmillClient._parse_timestamp(data.get("checked_at"), "health")
+        database_healthy = data.get("database_healthy")
+        workers_alive = data.get("workers_alive")
+        if not isinstance(database_healthy, bool):
+            raise WindmillProtocolError("Windmill returned an invalid database health value")
+        if (
+            isinstance(workers_alive, bool)
+            or not isinstance(workers_alive, int)
+            or workers_alive < 0
+        ):
+            raise WindmillProtocolError("Windmill returned an invalid worker count")
+        return WindmillHealthStatus(
+            status=status,
+            checked_at=checked_at,
+            database_healthy=database_healthy,
+            workers_alive=workers_alive,
+        )
+
+    @staticmethod
+    def _validate_detailed_health(data: Any) -> None:
+        """Validate and discard the required root of detailed health."""
+        if not isinstance(data, dict):
+            raise WindmillProtocolError("Windmill returned an invalid detailed health response")
+        status = data.get("status")
+        checked_at = data.get("checked_at")
+        version = data.get("version")
+        checks = data.get("checks")
+        if status not in set(WindmillHealthState):
+            raise WindmillProtocolError("Windmill returned an invalid detailed health state")
+        WindmillClient._parse_timestamp(checked_at, "detailed health")
+        if not isinstance(version, str) or not version or len(version) > 128:
+            raise WindmillProtocolError("Windmill returned an invalid detailed health version")
+        if not isinstance(checks, dict):
+            raise WindmillProtocolError("Windmill returned invalid detailed health checks")
+
+    @staticmethod
+    def _parse_timestamp(value: Any, endpoint: str) -> datetime:
+        """Parse one bounded timezone-aware ISO-8601 timestamp."""
+        if not isinstance(value, str) or not value or len(value) > 128:
+            raise WindmillProtocolError(f"Windmill returned an invalid {endpoint} timestamp")
+        try:
+            timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as err:
+            raise WindmillProtocolError(
+                f"Windmill returned an invalid {endpoint} timestamp"
+            ) from err
+        if timestamp.tzinfo is None:
+            raise WindmillProtocolError(f"Windmill returned an invalid {endpoint} timestamp")
+        return timestamp

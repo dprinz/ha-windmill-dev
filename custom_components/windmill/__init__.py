@@ -22,6 +22,7 @@ from .api import (
     WindmillWorkspaceError,
 )
 from .const import CONF_BASE_URL, CONF_TOKEN, CONF_WORKSPACE
+from .coordinator import WindmillCapabilityCoordinator
 from .models import WindmillRuntimeData
 
 type WindmillConfigEntry = ConfigEntry[WindmillRuntimeData]
@@ -41,7 +42,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WindmillConfigEntry) -> 
             entry.data[CONF_WORKSPACE],
             entry.data[CONF_TOKEN],
         )
-        identity = await client.async_validate()
+        connection = await client.async_connect()
     except WindmillAuthenticationError as err:
         raise ConfigEntryAuthFailed("Windmill authentication failed") from err
     except (WindmillConnectionError, WindmillRateLimitError, WindmillServerError) as err:
@@ -55,13 +56,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: WindmillConfigEntry) -> 
     ) as err:
         raise ConfigEntryError("Windmill configuration is no longer valid") from err
 
-    entry.runtime_data = WindmillRuntimeData(client=client, identity=identity)
+    capability_coordinator = WindmillCapabilityCoordinator(hass, entry, client)
+    await capability_coordinator.async_config_entry_first_refresh()
+    entry.runtime_data = WindmillRuntimeData(
+        client=client,
+        connection=connection,
+        capability_coordinator=capability_coordinator,
+    )
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: WindmillConfigEntry) -> bool:
-    """Unload a Windmill config entry with no platforms or private sessions to release."""
+    """Unload after config-entry callbacks stop the shared capability coordinator."""
     return True
 
 

@@ -1,5 +1,7 @@
 """Tests for the independent asynchronous Windmill API client."""
 
+import asyncio
+import json
 from http import HTTPStatus
 
 import aiohttp
@@ -8,10 +10,14 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from custom_components.windmill.api import (
+    PageRequest,
     WindmillAuthenticationError,
     WindmillAuthorizationError,
     WindmillClient,
+    WindmillConflictError,
     WindmillConnectionError,
+    WindmillEdition,
+    WindmillHealthState,
     WindmillProtocolError,
     WindmillRateLimitError,
     WindmillRequestError,
@@ -22,14 +28,22 @@ from custom_components.windmill.api import (
     normalize_base_url,
     normalize_workspace,
 )
+from custom_components.windmill.const import MAX_RESPONSE_BYTES
 
 BASE_URL = "https://windmill.example"
 WORKSPACE = "home-assistant"
 VERSION_URL = f"{BASE_URL}/api/version"
+HEALTH_URL = f"{BASE_URL}/api/health/status?force=false"
 WHOAMI_URL = f"{BASE_URL}/api/w/{WORKSPACE}/users/whoami"
 TOKEN = "obviously-fake-test-token"
 JSON_HEADERS = {"Content-Type": "application/json"}
 TEXT_HEADERS = {"Content-Type": "text/plain"}
+HEALTH_BODY = {
+    "status": "healthy",
+    "checked_at": "2026-08-02T10:00:00Z",
+    "database_healthy": True,
+    "workers_alive": 2,
+}
 
 
 @pytest.fixture
@@ -91,6 +105,18 @@ def test_normalize_workspace() -> None:
         normalize_workspace(42)  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize(
+    ("page", "per_page"),
+    [(0, 1), (True, 1), (1, 0), (1, 101), (1, False), ("1", 1)],
+)
+def test_page_request_is_bounded(page: object, per_page: object) -> None:
+    """Pagination never permits zero, negative or oversized page requests."""
+    with pytest.raises(ValueError):
+        PageRequest(page=page, per_page=per_page)  # type: ignore[arg-type]
+
+    assert PageRequest(page=2, per_page=100).as_params() == {"page": 2, "per_page": 100}
+
+
 async def test_token_is_required(hass: HomeAssistant) -> None:
     """A client cannot be created without authorization material."""
     with pytest.raises(WindmillAuthenticationError):
@@ -113,10 +139,13 @@ async def test_validate_identity_and_authorization_header(
     )
     client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
 
-    identity = await client.async_validate()
+    connection = await client.async_connect()
+    identity = connection.identity
 
     assert identity.username == "automation"
     assert identity.is_admin is False
+    assert connection.server.edition is WindmillEdition.COMMUNITY
+    assert connection.server.version == "1.775.2"
     assert not hasattr(identity, "email")
     assert client.identity_key == (BASE_URL, WORKSPACE)
     calls = aioclient_mock.mock_calls  # type: ignore[attr-defined]
@@ -132,6 +161,7 @@ async def test_validate_identity_and_authorization_header(
         (HTTPStatus.FORBIDDEN, WindmillAuthorizationError),
         (HTTPStatus.NOT_FOUND, WindmillWorkspaceError),
         (HTTPStatus.BAD_REQUEST, WindmillRequestError),
+        (HTTPStatus.CONFLICT, WindmillConflictError),
         (HTTPStatus.TOO_MANY_REQUESTS, WindmillRateLimitError),
         (HTTPStatus.SERVICE_UNAVAILABLE, WindmillServerError),
         (HTTPStatus.FOUND, WindmillProtocolError),
@@ -221,10 +251,54 @@ async def test_response_size_is_bounded(
         await client.async_validate()
 
 
+async def test_chunked_response_is_read_to_eof_with_hard_limit() -> None:
+    """A valid first chunk cannot hide an oversized delayed response tail."""
+
+    class ChunkedContent:
+        def __init__(self) -> None:
+            self._chunks = [
+                json.dumps(HEALTH_BODY).encode(),
+                b" " * MAX_RESPONSE_BYTES,
+            ]
+
+        async def read(self, size: int) -> bytes:
+            await asyncio.sleep(0)
+            if not self._chunks:
+                return b""
+            chunk = self._chunks[0]
+            result = chunk[:size]
+            if len(result) == len(chunk):
+                self._chunks.pop(0)
+            else:
+                self._chunks[0] = chunk[size:]
+            return result
+
+    class Response:
+        status = HTTPStatus.OK
+        headers = JSON_HEADERS
+        content = ChunkedContent()
+
+        async def __aenter__(self) -> Response:
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+    class Session:
+        def get(self, *args: object, **kwargs: object) -> Response:
+            return Response()
+
+    client = WindmillClient(Session(), BASE_URL, WORKSPACE, TOKEN)  # type: ignore[arg-type]
+
+    with pytest.raises(WindmillProtocolError, match="too large"):
+        await client.async_get_health_status()
+
+
 @pytest.mark.parametrize(
     ("body", "content_length"),
     [
         ("{}", "invalid"),
+        ("{}", "-1"),
         (" " * 65_537, None),
     ],
 )
@@ -292,3 +366,79 @@ async def test_version_probe_validates_contract(
 
     with pytest.raises(WindmillProtocolError):
         await client.async_validate()
+
+
+@pytest.mark.parametrize("status", [HTTPStatus.OK, HTTPStatus.SERVICE_UNAVAILABLE])
+async def test_health_status_parsing(
+    hass: HomeAssistant,
+    aioclient_mock: object,
+    status: HTTPStatus,
+) -> None:
+    """Healthy and unhealthy HTTP statuses share one bounded health model."""
+    aioclient_mock.get(  # type: ignore[attr-defined]
+        HEALTH_URL,
+        status=status,
+        json={
+            "status": "healthy" if status == 200 else "unhealthy",
+            "checked_at": "2026-08-02T10:00:00Z",
+            "database_healthy": status == 200,
+            "workers_alive": 2 if status == 200 else 0,
+            "secret": f"untrusted-{TOKEN}",
+        },
+        headers=JSON_HEADERS,
+    )
+    client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
+
+    health = await client.async_get_health_status()
+
+    expected = WindmillHealthState.HEALTHY if status == 200 else WindmillHealthState.UNHEALTHY
+    assert health.status is expected
+    assert health.checked_at.isoformat() == "2026-08-02T10:00:00+00:00"
+    assert health.workers_alive in {0, 2}
+    assert TOKEN not in repr(health)
+    call = aioclient_mock.mock_calls[0]  # type: ignore[attr-defined]
+    assert "Authorization" not in call[3]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        [],
+        {**{"checked_at": "now", "database_healthy": True, "workers_alive": 1}},
+        {**HEALTH_BODY, "status": "mystery"},
+        {**HEALTH_BODY, "checked_at": ""},
+        {**HEALTH_BODY, "checked_at": "not-a-time"},
+        {**HEALTH_BODY, "checked_at": "2026-08-02T10:00:00"},
+        {**HEALTH_BODY, "database_healthy": "yes"},
+        {**HEALTH_BODY, "workers_alive": True},
+        {**HEALTH_BODY, "workers_alive": -1},
+    ],
+)
+async def test_health_status_rejects_invalid_models(
+    hass: HomeAssistant,
+    aioclient_mock: object,
+    body: object,
+) -> None:
+    """Malformed health fields fail closed without retaining upstream data."""
+    aioclient_mock.get(HEALTH_URL, json=body, headers=JSON_HEADERS)  # type: ignore[attr-defined]
+    client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
+
+    with pytest.raises(WindmillProtocolError):
+        await client.async_get_health_status()
+
+
+async def test_retry_after_is_bounded(
+    hass: HomeAssistant, aioclient_mock: object, version_mock: None
+) -> None:
+    """Only bounded delta-seconds survive a rate-limit response."""
+    aioclient_mock.get(  # type: ignore[attr-defined]
+        WHOAMI_URL,
+        status=HTTPStatus.TOO_MANY_REQUESTS,
+        headers={"Retry-After": "120"},
+    )
+    client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
+
+    with pytest.raises(WindmillRateLimitError) as caught:
+        await client.async_validate()
+
+    assert caught.value.retry_after == 120
