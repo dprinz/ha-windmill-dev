@@ -42,6 +42,14 @@ FRONTMATTER_RE = re.compile(r"\A---\n(?P<body>.*?)\n---\n", re.DOTALL)
 FIELD_RE = re.compile(r"^(?P<key>[a-z_]+):\s*(?P<value>.*)$", re.MULTILINE)
 LINK_RE = re.compile(r"(?<!!)\[[^]]+\]\((?P<target>[^)]+)\)")
 TICKET_NAME_RE = re.compile(r"^WMHA-\d{4}-.+\.md$")
+IGNORED_MARKDOWN_DIRS = {
+    ".agent-state",
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+}
 
 
 def parse_frontmatter(text: str, path: Path) -> dict[str, str]:
@@ -95,6 +103,8 @@ def validate_tickets(errors: list[str]) -> None:
 
 def validate_local_links(errors: list[str]) -> None:
     for path in ROOT.rglob("*.md"):
+        if any(part in IGNORED_MARKDOWN_DIRS for part in path.relative_to(ROOT).parts):
+            continue
         text = path.read_text(encoding="utf-8")
         for match in LINK_RE.finditer(text):
             target = match.group("target").strip()

@@ -1,0 +1,27 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Windmill",
+        "description": "Enter a Windmill instance, workspace, and token with users:read access.",
+        "data": {
+          "base_url": "Base URL",
+          "workspace": "Workspace ID",
+          "token": "Token"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to Windmill.",
+      "insufficient_permission": "The token cannot access this workspace.",
+      "invalid_auth": "The token is invalid.",
+      "invalid_url": "Enter a valid HTTPS URL. HTTP is allowed only for loopback addresses.",
+      "invalid_workspace": "The workspace is invalid or unavailable.",
+      "server_error": "Windmill is temporarily unavailable.",
+      "unexpected_response": "Windmill returned an unexpected response."
+    },
+    "abort": {
+      "already_configured": "This Windmill instance and workspace are already configured."
+    }
+  }
+}

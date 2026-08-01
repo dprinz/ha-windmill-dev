@@ -7,8 +7,8 @@ Version-sensitive implementation claims must be traced to primary sources. Re-ch
 | GitHub repository and agent instructions | https://docs.github.com/en/copilot/reference/custom-instructions-support | 2026-08-01 | `AGENTS.md`, scoped instructions and adapter support |
 | GitHub custom agents | https://docs.github.com/en/copilot/concepts/agents/cloud-agent/about-custom-agents | 2026-08-01 | `.github/agents/*.agent.md` format and role profiles |
 | Home Assistant Integration Quality Scale | https://developers.home-assistant.io/docs/core/integration-quality-scale/ | 2026-08-01 | Bronze-first quality target |
-| Home Assistant config flows | https://developers.home-assistant.io/docs/core/integration/config_flow/ | 2026-08-01 | UI configuration and config-entry lifecycle |
-| Home Assistant testing | https://developers.home-assistant.io/docs/development_testing/ | 2026-08-01 | pytest, public-interface testing and coverage strategy |
+| Home Assistant config flows | https://developers.home-assistant.io/docs/core/integration/config_flow/ | 2026-08-02 | UI setup, entry data, duplicate handling, unique-ID constraints and lifecycle |
+| Home Assistant testing | https://developers.home-assistant.io/docs/development_testing/ | 2026-08-02 | pytest, public-interface testing and coverage strategy |
 | Home Assistant integration structure | https://developers.home-assistant.io/docs/creating_integration_file_structure/ | 2026-08-01 | component layout |
 | Windmill webhooks and job execution | https://www.windmill.dev/docs/core_concepts/webhooks | 2026-08-01 | async/sync execution, bearer auth and job IDs |
 | Windmill user tokens | https://www.windmill.dev/docs/core_concepts/user_tokens | 2026-08-01 | least-privilege scopes and token handling |
@@ -24,6 +24,10 @@ Version-sensitive implementation claims must be traced to primary sources. Re-ch
 | Windmill v1.775.2 worker handlers | https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-api-workers/src/lib.rs | 2026-08-01 | worker visibility and DevOps-role checks |
 | Windmill v1.775.2 config handlers | https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-api-configs/src/lib.rs | 2026-08-01 | worker-group access and config obfuscation |
 | Windmill v1.775.2 authentication extractor | https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-api-auth/src/auth.rs | 2026-08-01 | route-scope checks applied to granular-scoped tokens |
+| Home Assistant Core 2026.7.4 | https://github.com/home-assistant/core/releases/tag/2026.7.4 | 2026-08-02 | pinned implementation and test baseline |
+| Home Assistant integration manifest | https://developers.home-assistant.io/docs/creating_integration_manifest/ | 2026-08-02 | custom integration metadata, version and config-flow declaration |
+| Home Assistant integration setup failures | https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/test-before-setup/ | 2026-08-02 | setup retry and authentication failure mapping |
+| pytest-homeassistant-custom-component 0.13.348 | https://pypi.org/project/pytest-homeassistant-custom-component/0.13.348/ | 2026-08-02 | test-only harness pinned to Home Assistant 2026.7.4 |
 
 ## Research note requirements
 

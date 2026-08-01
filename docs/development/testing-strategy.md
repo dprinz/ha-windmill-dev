@@ -22,6 +22,22 @@ When production code is introduced:
 4. Action and entity tests assert behavior through Home Assistant's service registry, state machine and registries rather than internal implementation details.
 5. Regression tests reproduce a bug before the fix and fail when the fix is removed.
 
+## Current integration commands
+
+The test environment is locked for Python 3.14.2 or newer and Home Assistant 2026.7.4.
+
+```bash
+uv sync --group dev --python 3.14
+uv run pytest -q --cov=custom_components.windmill --cov-report=term-missing --cov-fail-under=95
+uv run ruff check custom_components tests
+uv run ruff format --check custom_components tests
+uv run mypy custom_components/windmill
+python scripts/validate_repository.py
+```
+
+The Home Assistant test harness is a development-only dependency. Production uses Home
+Assistant's bundled `aiohttp` session and adds no runtime package.
+
 ## Test isolation
 
 - No automated test calls a real Windmill or Home Assistant production instance.

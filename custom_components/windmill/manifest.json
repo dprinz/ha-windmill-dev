@@ -1,0 +1,11 @@
+{
+  "domain": "windmill",
+  "name": "Windmill",
+  "codeowners": ["@dprinz"],
+  "config_flow": true,
+  "documentation": "https://github.com/dprinz/ha-windmill-dev",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "requirements": [],
+  "version": "0.1.0"
+}
