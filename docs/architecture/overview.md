@@ -35,6 +35,13 @@ Credentials and immutable connection identity belong in config-entry data. User-
 
 Asynchronous execution is the default. The first implementation should use the simplest verified bounded mechanism for status retrieval. Webhook callbacks or SSE are later options only if they improve reliability without requiring unsafe network exposure.
 
+### Entity lifecycle
+
+Entity sets are built when a config entry is set up and change only on reload. Volatile Windmill
+objects are reflected in entity *state*, never in entity *existence*, so restarts and scaling do not
+churn the entity registry. [ADR-0002](decisions/0002-worker-entity-lifecycle.md) records this for
+worker groups and worker instances, including which workspace-side changes need a manual reload.
+
 ### Data minimization
 
 Entity state and diagnostics must contain only metadata needed for operation. Arbitrary arguments, full results, authorization material and sensitive logs are excluded by default.

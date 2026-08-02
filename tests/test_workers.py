@@ -176,6 +176,45 @@ async def test_restarted_workers_keep_stable_entities(hass: HomeAssistant) -> No
     assert hass.states.get("sensor.home_assistant_workers_on_host1").state == "1"
 
 
+async def test_silent_instance_keeps_its_entity_and_reports_zero(hass: HomeAssistant) -> None:
+    """A worker instance that stops reporting is not removed; see ADR-0002."""
+    entry = await _setup_entry(hass)
+    entity_registry = er.async_get(hass)
+
+    with patched_client(workers=(WORKERS[2],)):
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=3))
+        await hass.async_block_till_done()
+
+    assert hass.states.get("sensor.home_assistant_workers_on_host1").state == "0"
+    assert f"{entry.entry_id}_worker_instance_alive_host1" in {
+        registered.unique_id
+        for registered in er.async_entries_for_config_entry(entity_registry, entry.entry_id)
+    }
+
+
+async def test_new_instance_needs_a_reload(hass: HomeAssistant) -> None:
+    """A worker instance that appears after setup gets an entity only after a reload; ADR-0002."""
+    entry = await _setup_entry(hass)
+    appeared = (
+        *WORKERS,
+        WindmillWorker(
+            name="wk-default-host9-mno", instance="host9", group="default", version="1.775.2"
+        ),
+    )
+
+    with patched_client(workers=appeared):
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=3))
+        await hass.async_block_till_done()
+
+    assert hass.states.get("sensor.home_assistant_workers_on_host9") is None
+
+    with patched_client(workers=appeared):
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert hass.states.get("sensor.home_assistant_workers_on_host9").state == "1"
+
+
 async def test_worker_details_are_disabled_by_default(hass: HomeAssistant) -> None:
     """Per-instance entities require an explicit opt-in."""
     await _setup_entry(hass, options={OPT_INSTANCE_HEALTH: False, OPT_WORKER_GROUPS: True})

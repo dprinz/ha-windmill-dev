@@ -1,7 +1,7 @@
 ---
 id: WMHA-0021
 title: Document the worker entity lifecycle trade-off
-status: backlog
+status: done
 type: documentation
 priority: low
 risk: low
@@ -72,13 +72,13 @@ a stronger warning, is the open question this ticket should settle.
 
 ## Acceptance criteria
 
-- [ ] The trade-off, its rationale and the reload requirement are documented in a location named by
+- [x] The trade-off, its rationale and the reload requirement are documented in a location named by
       `docs/context-map.md`.
-- [ ] The documentation states which workspace-side changes require a reload.
-- [ ] The identifier-stability expectation for per-instance entities is explicit, including the
+- [x] The documentation states which workspace-side changes require a reload.
+- [x] The identifier-stability expectation for per-instance entities is explicit, including the
       ephemeral-identifier risk.
-- [ ] The decision on ADR versus scoped documentation is recorded with its reason.
-- [ ] User-facing guidance is either included or handed to `WMHA-0013` by an explicit reference.
+- [x] The decision on ADR versus scoped documentation is recorded with its reason.
+- [x] User-facing guidance is either included or handed to `WMHA-0013` by an explicit reference.
 
 ## Non-goals
 
@@ -95,30 +95,38 @@ a stronger warning, is the open question this ticket should settle.
 
 | Item | Classification | Validation |
 | --- | --- | --- |
-| Ephemeral worker identifiers occur in realistic Windmill deployments | assumption | Confirm against Windmill deployment documentation, or record as an unvalidated risk |
-| Dynamic entity addition is not wanted before v1 | assumption | Confirm against `docs/product/requirements.md` and `WMHA-0015` |
+| Ephemeral worker identifiers occur in realistic Windmill deployments | unvalidated risk | The Windmill worker-group documentation, checked 2026-08-02, documents `WORKER_GROUP` but says nothing about how `worker_instance` is derived. Recorded in ADR-0002 as an unvalidated risk, mitigated by the feature staying opt-in and off by default |
+| Dynamic entity addition is not wanted before v1 | assumption | Unchanged: no requirement in `docs/product/requirements.md` and no `WMHA-0015` criterion asks for it, and this ticket's non-goals forbid implementing it |
 
 ## Validation evidence
 
-Fill during implementation; do not pre-check.
-
 | Check | Command or inspection | Result |
 | --- | --- | --- |
-| Repository guardrails | `python scripts/validate_repository.py` | not run |
-| Documentation review | inspection against the current worker implementation | not run |
+| Repository guardrails | `python scripts/validate_repository.py` | passed (23 tickets checked), local links resolve |
+| Documentation review | Inspection of `_worker_sensors`, `_async_configured_worker_groups`, `WindmillWorkerInstanceSensor.native_value` and `WindmillWorkerGroupSensor.native_value` against every claim in ADR-0002 | every documented consequence matches the code |
+| Worker tests | `uv run pytest -q tests/test_workers.py` | passed, 17 tests |
+| Full suite and coverage | `uv run pytest -q --cov=custom_components.windmill --cov-report=term-missing --cov-fail-under=95` | passed, 360 tests, 97.05% |
+| Lint, format and types | `uv run ruff check custom_components tests`; `uv run ruff format --check custom_components tests`; `uv run mypy custom_components/windmill` | passed |
 
 ## Review evidence
 
-- Reviewer/session: not started
-- Findings: not started
-- Resolution: not started
+- Reviewer/session: separate review pass inside the implementing session; the same deviation from
+  the independent-reviewer rule as `WMHA-0018` to `WMHA-0022` applies.
+- Findings: two of the four consequences this ADR documents had no test. The `0` state of a fully
+  silent instance was only covered indirectly, by a test that reduced an instance from two workers
+  to one, and the reload requirement for a newly appeared instance was not covered at all. A
+  documentation ticket that states behavior nobody tests is exactly the failure mode the ticket's
+  own constraint warns about.
+- Resolution: added `test_silent_instance_keeps_its_entity_and_reports_zero` and
+  `test_new_instance_needs_a_reload`. No production code changed.
 
 ## Residual risks and follow-up
 
-- If the ephemeral-identifier case turns out to be common, a follow-up ticket for dynamic entity
-  lifecycle or a bounded instance allowlist will be needed. This ticket only decides and documents.
+- If the ephemeral-identifier case turns out to be common, a follow-up ticket for a dynamic entity
+  lifecycle or a bounded instance allowlist will be needed. ADR-0002 names this in "Revisit when".
+- User-facing wording is handed to `WMHA-0013`, which now carries the requirement.
 
 ## Blog notes
 
-- Candidate: "no registry churn" and "reflects reality" are competing goals, and the choice between
-  them is only defensible once it is written down.
+- Not written. The observation — "no registry churn" and "reflects reality" are competing goals — is
+  real, but it is fully captured by ADR-0002 and would duplicate it rather than add evidence.

@@ -31,6 +31,9 @@ A public integration is not usable when capability limitations, permissions and 
 - English and German translations for all flows, errors, entities, actions and repairs.
 - Safe examples for execution and run events.
 - Permission matrix for basic and administrative features.
+- Worker entity lifecycle guidance from `WMHA-0021`: which workspace-side changes require reloading
+  the integration, why a silent worker reports `0` instead of disappearing, and the ephemeral
+  `worker_instance` risk recorded in `docs/architecture/decisions/0002-worker-entity-lifecycle.md`.
 - Removal and credential-revocation guidance, including the note added by `WMHA-0020` that stores
   orphaned by add-and-remove cycles before that change are not cleaned retroactively.
 
