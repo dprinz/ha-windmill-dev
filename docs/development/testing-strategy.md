@@ -44,6 +44,20 @@ python scripts/validate_repository.py
 The Home Assistant test harness is a development-only dependency. Production uses Home
 Assistant's bundled `aiohttp` session and adds no runtime package.
 
+## What CI enforces
+
+`.github/workflows/checks.yml` ("Tests, lint and types") runs this exact command list on every
+pull request and on every push to `main`, plus `uv lock --check` so a stale lockfile fails the
+build. The interpreter is resolved by `uv` from `.python-version`; the job prints `uv run python -VV`
+before the checks, so a wrong-interpreter failure is visible in the log instead of being
+misdiagnosed. A local result is therefore reproducible on a clean checkout, and a green check on
+`main` covers the test suite, the coverage threshold, lint, formatting and types — not only the
+structural guardrails (WMHA-0031).
+
+The other two workflows cover different ground: `repository-guardrails.yml` runs
+`scripts/validate_repository.py`, and `validate-hacs.yml` runs HACS and hassfest validation. When a
+ticket cites CI as evidence, it names the job, not just "CI".
+
 ## Test isolation
 
 - No automated test calls a real Windmill or Home Assistant production instance.

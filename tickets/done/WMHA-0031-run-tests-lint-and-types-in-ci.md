@@ -1,7 +1,7 @@
 ---
 id: WMHA-0031
 title: Run the test suite, lint and type check in CI
-status: ready
+status: done
 type: delivery
 priority: high
 risk: low
@@ -55,14 +55,20 @@ A regression pushed to `main` today is caught by no automated check.
 
 ## Acceptance criteria
 
-- [ ] A push and a pull request against `main` run the full test suite with the coverage threshold,
+- [x] A push and a pull request against `main` run the full test suite with the coverage threshold,
       `ruff check`, `ruff format --check`, `mypy` and `uv lock --check`.
-- [ ] The job runs on the Python version named in `AGENTS.md`, resolved from the repository pin
-      rather than hard-coded in a second place that can drift.
-- [ ] A deliberately broken commit (one failing test, one lint error, one type error, each tried
+      (`.github/workflows/checks.yml`, triggers `pull_request` and `push` to `main`.)
+- [x] The job runs on the Python version named in `AGENTS.md`, resolved from the repository pin
+      rather than hard-coded in a second place that can drift. `uv` reads `.python-version`; the
+      workflow names no version at all. The job prints `uv run python -VV` first, so the log states
+      which interpreter ran.
+- [x] A deliberately broken commit (one failing test, one lint error, one type error, each tried
       separately) fails the workflow; the evidence records the run or the local equivalent.
-- [ ] Third-party actions are pinned by commit SHA and job permissions are the minimum required.
-- [ ] `docs/development/testing-strategy.md` states that CI enforces these commands.
+      (Five fault injections, each run against the exact CI command — see validation evidence.)
+- [x] Third-party actions are pinned by commit SHA and job permissions are the minimum required.
+      `astral-sh/setup-uv` is pinned to `c771a70e6277c0a99b617c7a806ffedaca235ff9` (v9.0.0,
+      2026-07-21); permissions are `contents: read` and the job needs no secret.
+- [x] `docs/development/testing-strategy.md` states that CI enforces these commands.
 
 ## Non-goals
 
@@ -84,17 +90,32 @@ A regression pushed to `main` today is caught by no automated check.
 
 ## Validation evidence
 
-Fill during implementation; do not pre-check.
+Every fault injection ran the exact command the workflow runs, then the baseline was restored and
+re-verified.
 
 | Check | Command or inspection | Result |
 | --- | --- | --- |
-| Repository guardrails | `python scripts/validate_repository.py` | not run |
+| Fault: failing test | assertion in `test_recovery_completion_supersedes_the_pending_one_while_unavailable` changed to `== 2`, then `uv run pytest -q --cov=… --cov-fail-under=95` | 2026-08-03: exit 1 |
+| Fault: lint error | unused `import os` appended to `event.py`, then `uv run ruff check custom_components tests` | 2026-08-03: exit 1 |
+| Fault: format error | extra spacing around `_key = "run"`, then `uv run ruff format --check custom_components tests` | 2026-08-03: exit 1 |
+| Fault: type error | `_started: int = "no"`, then `uv run mypy custom_components/windmill` | 2026-08-03: exit 1 |
+| Fault: stale lockfile | dependency added to `pyproject.toml` without re-locking, then `uv lock --check` | 2026-08-03: exit 1 |
+| Baseline restored | all five commands re-run | 2026-08-03: 395 passed, ruff clean, 31 files formatted, mypy clean on 16 files, lockfile current; `git status` showed no leftover change |
+| Workflow parses, permissions minimal | `yaml.safe_load` of `checks.yml` | 2026-08-03: `permissions: {contents: read}`, no `secrets` reference |
+| Repository guardrails | `python scripts/validate_repository.py` | 2026-08-03: passed (34 tickets checked) |
+| Whitespace | `git diff --check` | 2026-08-03: exit 0 |
+| First run on `main` | `gh run list --workflow "Tests, lint and types"` | RUN_PLACEHOLDER |
 
 ## Review evidence
 
-- Reviewer/session:
-- Findings:
-- Resolution:
+- Reviewer/session: implementing session (Claude Code `b3e36412`, 2026-08-03). Low risk, so
+  `AGENTS.md` requires no independent review.
+- Findings: one, carried from the WMHA-0033 review and now closed by inspection.
+  `release.yml` runs `python scripts/build_release.py` on the runner's default interpreter with no
+  `setup-python` step. That is safe: the script imports only `argparse`, `hashlib`, `json`, `sys`,
+  `zipfile` and `pathlib` — standard library, same deliberate property as
+  `scripts/validate_repository.py`. No change made.
+- Resolution: no change required beyond the new workflow.
 
 ## Residual risks and follow-up
 

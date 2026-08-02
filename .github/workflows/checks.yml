@@ -1,0 +1,46 @@
+name: Tests, lint and types
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up uv
+        # astral-sh/setup-uv v9.0.0 @ 2026-07-21, pinned by commit SHA like the
+        # other third-party actions in this repository (WMHA-0014 security model).
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
+        with:
+          enable-cache: true
+      - name: Verify the lockfile is current
+        run: uv lock --check
+      - name: Install the locked environment
+        # uv resolves the interpreter from .python-version, so the supported
+        # Python version is named in exactly one place (WMHA-0033).
+        run: uv sync --group dev --locked
+      - name: Report the interpreter
+        # A wrong interpreter is the recurring misdiagnosis in this repository
+        # (AGENTS.md, "Diagnose a syntax error as a wrong interpreter first").
+        # Printing it makes every failure log self-explanatory.
+        run: uv run python -VV
+      - name: Tests
+        run: >-
+          uv run pytest -q
+          --cov=custom_components.windmill
+          --cov-report=term-missing
+          --cov-fail-under=95
+      - name: Lint
+        run: uv run ruff check custom_components tests
+      - name: Format
+        run: uv run ruff format --check custom_components tests
+      - name: Types
+        run: uv run mypy custom_components/windmill
