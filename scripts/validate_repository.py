@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -50,6 +51,40 @@ IGNORED_MARKDOWN_DIRS = {
     ".ruff_cache",
     ".venv",
 }
+
+TRANSLATION_SOURCE = ROOT / "custom_components" / "windmill" / "strings.json"
+TRANSLATION_DIR = ROOT / "custom_components" / "windmill" / "translations"
+
+
+def flatten_keys(value: object, prefix: str = "") -> dict[str, str]:
+    """Flatten a nested translation mapping into dotted keys with string leaves."""
+    if isinstance(value, dict):
+        flattened: dict[str, str] = {}
+        for key, child in value.items():
+            flattened.update(flatten_keys(child, f"{prefix}{key}."))
+        return flattened
+    if isinstance(value, str):
+        return {prefix[:-1]: value}
+    raise ValueError(f"unsupported translation value at {prefix[:-1] or '<root>'}")
+
+
+def validate_translations(errors: list[str]) -> None:
+    """Report missing and orphaned keys of every translation file against strings.json."""
+    try:
+        source = flatten_keys(json.loads(TRANSLATION_SOURCE.read_text(encoding="utf-8")))
+    except (OSError, ValueError) as exc:
+        errors.append(f"cannot read {TRANSLATION_SOURCE.relative_to(ROOT)}: {exc}")
+        return
+    for path in sorted(TRANSLATION_DIR.glob("*.json")):
+        try:
+            translation = flatten_keys(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, ValueError) as exc:
+            errors.append(f"cannot read {path.relative_to(ROOT)}: {exc}")
+            continue
+        for key in sorted(set(source) - set(translation)):
+            errors.append(f"{path.relative_to(ROOT)}: missing translation key: {key}")
+        for key in sorted(set(translation) - set(source)):
+            errors.append(f"{path.relative_to(ROOT)}: orphaned translation key: {key}")
 
 
 def parse_frontmatter(text: str, path: Path) -> dict[str, str]:
@@ -128,6 +163,7 @@ def main() -> int:
     validate_required_files(errors)
     validate_tickets(errors)
     validate_local_links(errors)
+    validate_translations(errors)
 
     if errors:
         print("Repository validation failed:")

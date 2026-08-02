@@ -10,7 +10,7 @@ Run:
 python scripts/validate_repository.py
 ```
 
-This validates required context files, ticket frontmatter, state-directory consistency, duplicate IDs and local Markdown links.
+This validates required context files, ticket frontmatter, state-directory consistency, duplicate IDs, local Markdown links and translation files (missing or orphaned keys of every file in `custom_components/windmill/translations/` against `strings.json`).
 
 ## Integration test layers
 

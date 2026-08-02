@@ -1,0 +1,316 @@
+{
+  "title": "Windmill",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Mit Windmill verbinden",
+        "description": "Gib die URL der Windmill-Instanz und ein Token mit mindestens `users:read`-Zugriff ein. Das Token wird ausschließlich in einem Authorization-Header gesendet.",
+        "data": {
+          "base_url": "Basis-URL",
+          "token": "Token"
+        },
+        "data_description": {
+          "base_url": "Zum Beispiel https://app.windmill.dev oder die URL deiner selbst gehosteten Instanz. HTTP ist nur für Loopback-Adressen erlaubt.",
+          "token": "Ein Windmill-Benutzertoken mit minimalen Rechten. Ergänze `workspaces:read`, wenn du den Workspace aus einer Liste auswählen möchtest."
+        }
+      },
+      "workspace": {
+        "title": "Workspace auswählen",
+        "description": "Wähle den Workspace, den dieser Eintrag überwachen soll. Wenn dein Token keine Workspaces auflisten kann, gib die Workspace-ID manuell ein.",
+        "data": {
+          "workspace": "Workspace"
+        },
+        "data_description": {
+          "workspace": "Die Workspace-ID, nicht der Anzeigename."
+        }
+      },
+      "capabilities": {
+        "title": "Erkannte Fähigkeiten",
+        "description": "Verbunden mit {server} als {username} im Workspace {workspace}.\n\nErkannte Unterstützung:\n- Instanz-Health: {health}\n- Detailliertes Health: {detailed_health}\n- Worker: {workers}\n- Runs: {runs}\n- Skript-Erkennung: {script_discovery}\n- Flow-Erkennung: {flow_discovery}\n- Update-Prüfung: {update_visibility}\n\n`unauthorized` bedeutet, dass dem Token diese Berechtigung fehlt, und `unsupported` bedeutet, dass diese Windmill-Installation den Endpunkt nicht anbietet. In beiden Fällen ist nur das betroffene Feature nicht verfügbar. Das Ausführen von Skripten und Flows wird während der Einrichtung nie geprüft, weil dafür ein Job gestartet werden müsste."
+      },
+      "features": {
+        "title": "Features auswählen",
+        "description": "Aktiviere nur, was du brauchst. Administrative und hochkardinale Überwachung bleibt deaktiviert, solange du sie nicht einschaltest, und ein Feature, dessen Fähigkeit nicht verfügbar ist, erstellt einfach keine Entitäten.",
+        "data": {
+          "instance_health": "Instanz-Health",
+          "detailed_health": "Detaillierte Health-Diagnose",
+          "worker_groups": "Worker-Gruppen",
+          "worker_details": "Details einzelner Worker",
+          "run_observation": "Job- und Run-Beobachtung",
+          "update_entity": "Update-Verfügbarkeit",
+          "runnable_buttons": "Schaltflächen für parameterlose Runnables"
+        },
+        "data_description": {
+          "detailed_health": "Administrativ: benötigt ein Token, das Windmill auf dem detaillierten Health-Endpunkt akzeptiert.",
+          "worker_groups": "Administrativ: zeigt lebendige Worker und Versionsabweichungen pro Worker-Gruppe.",
+          "worker_details": "Hohe Kardinalität: fügt eine Entität pro Worker-Instanz hinzu und ist für Betreiber selbst gehosteter Instanzen gedacht.",
+          "update_entity": "Nur für Self-Hosting. Verwaltete Windmill-Cloud-Deployments werden von Windmill aktualisiert.",
+          "runnable_buttons": "Optional: fügt pro ausgewähltem Runnable ohne Argumente eine Schaltfläche hinzu. Die Aktion bleibt in jedem Fall verfügbar."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Windmill-Token aktualisieren",
+        "description": "Gib ein neues Token für den Workspace {workspace} auf {base_url} ein. Instanz und Workspace dieses Eintrags bleiben unverändert.",
+        "data": {
+          "token": "Token"
+        }
+      },
+      "reconfigure": {
+        "title": "Windmill-Verbindung neu konfigurieren",
+        "description": "Ändere die Instanz-URL oder den Workspace dieses Eintrags. Lass das Token leer, um das aktuelle zu behalten.",
+        "data": {
+          "base_url": "Basis-URL",
+          "workspace": "Workspace",
+          "token": "Neues Token"
+        },
+        "data_description": {
+          "token": "Optional. Das gespeicherte Token bleibt erhalten, wenn dieses Feld leer bleibt."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung zu Windmill nicht möglich.",
+      "insufficient_permission": "Das Token kann nicht auf diesen Workspace zugreifen.",
+      "invalid_auth": "Das Token ist ungültig.",
+      "invalid_url": "Gib eine gültige HTTPS-URL ein. HTTP ist nur für Loopback-Adressen erlaubt.",
+      "invalid_workspace": "Der Workspace ist ungültig oder nicht verfügbar.",
+      "server_error": "Windmill ist vorübergehend nicht verfügbar.",
+      "unexpected_response": "Windmill hat eine unerwartete Antwort zurückgegeben."
+    },
+    "abort": {
+      "already_configured": "Diese Windmill-Instanz und dieser Workspace sind bereits konfiguriert.",
+      "reauth_successful": "Das Windmill-Token wurde aktualisiert.",
+      "reconfigure_successful": "Die Windmill-Verbindung wurde aktualisiert."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "database": {
+        "name": "Datenbank"
+      }
+    },
+    "sensor": {
+      "instance_health": {
+        "name": "Health",
+        "state": {
+          "healthy": "Gesund",
+          "degraded": "Beeinträchtigt",
+          "unhealthy": "Fehlerhaft"
+        }
+      },
+      "alive_workers": {
+        "name": "Lebendige Worker"
+      },
+      "pending_jobs": {
+        "name": "Wartende Jobs"
+      },
+      "running_jobs": {
+        "name": "Laufende Jobs"
+      },
+      "worker_group_alive": {
+        "name": "Worker von {subject}"
+      },
+      "worker_group_versions": {
+        "name": "Worker-Versionen von {subject}"
+      },
+      "worker_instance_alive": {
+        "name": "Worker auf {subject}"
+      },
+      "workspace_running_jobs": {
+        "name": "Laufende Jobs (Workspace)"
+      },
+      "workspace_queued_jobs": {
+        "name": "Warteschlangen-Jobs (Workspace)"
+      },
+      "last_successful_run": {
+        "name": "Letzter erfolgreicher Run"
+      },
+      "last_failed_run": {
+        "name": "Letzter fehlgeschlagener Run"
+      }
+    },
+    "event": {
+      "run": {
+        "name": "Run",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "success": "Erfolg",
+              "failure": "Fehlschlag",
+              "canceled": "Abgebrochen"
+            }
+          }
+        }
+      }
+    },
+    "button": {
+      "run_runnable": {
+        "name": "{path} ausführen"
+      }
+    },
+    "update": {
+      "server": {
+        "name": "Windmill-Server"
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Windmill-Optionen",
+        "menu_options": {
+          "features": "Features",
+          "runnables": "Skripte und Flows"
+        }
+      },
+      "features": {
+        "title": "Windmill-Features",
+        "description": "Aktiviere nur die Features, die du brauchst. Änderungen laden die Integration neu.",
+        "data": {
+          "instance_health": "Instanz-Health",
+          "detailed_health": "Detaillierte Health-Diagnose",
+          "worker_groups": "Worker-Gruppen",
+          "worker_details": "Details einzelner Worker",
+          "run_observation": "Job- und Run-Beobachtung",
+          "update_entity": "Update-Verfügbarkeit",
+          "runnable_buttons": "Schaltflächen für parameterlose Runnables"
+        },
+        "data_description": {
+          "detailed_health": "Administrativ: benötigt ein Token, das Windmill auf dem detaillierten Health-Endpunkt akzeptiert.",
+          "worker_groups": "Administrativ: zeigt lebendige Worker und Versionsabweichungen pro Worker-Gruppe.",
+          "worker_details": "Hohe Kardinalität: fügt eine Entität pro Worker-Instanz hinzu und ist für Betreiber selbst gehosteter Instanzen gedacht.",
+          "update_entity": "Nur für Self-Hosting. Verwaltete Windmill-Cloud-Deployments werden von Windmill aktualisiert.",
+          "runnable_buttons": "Optional: fügt pro ausgewähltem Runnable ohne Argumente eine Schaltfläche hinzu. Die Aktion bleibt in jedem Fall verfügbar."
+        }
+      },
+      "runnables": {
+        "title": "Skripte und Flows auswählen",
+        "description": "Nur die Runnables, die du hier auswählst, können von Home Assistant überhaupt genutzt werden. Die Erkennung ist begrenzt, daher listen sehr große Workspaces möglicherweise nicht jedes Runnable.",
+        "data": {
+          "runnables": "Ausgewählte Skripte und Flows",
+          "pin_selected": "Neu ausgewählte Runnables auf ihre aktuelle Version pinnen"
+        },
+        "data_description": {
+          "pin_selected": "Gepinnte Skripte behalten ihren aktuellen Hash und gepinnte Flows ihre aktuelle Version. Bereits ausgewählte Runnables behalten ihren bisherigen Modus."
+        }
+      }
+    },
+    "error": {
+      "too_many_runnables": "Wähle weniger Runnables aus."
+    }
+  },
+  "services": {
+    "run": {
+      "name": "Skript oder Flow ausführen",
+      "description": "Startet ein ausgewähltes Windmill-Skript oder einen Flow asynchron und gibt dessen Job-Kennung zurück.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Windmill-Workspace",
+          "description": "Die konfigurierte Windmill-Instanz und der Workspace, in dem ausgeführt werden soll."
+        },
+        "kind": {
+          "name": "Art",
+          "description": "Ob das Runnable ein Skript oder ein Flow ist."
+        },
+        "path": {
+          "name": "Pfad",
+          "description": "Pfad eines Runnables, das du in den Integrationsoptionen ausgewählt hast."
+        },
+        "arguments": {
+          "name": "Argumente",
+          "description": "JSON-kompatible Argumente, die gegen das Eingabeschema des Runnables validiert werden."
+        }
+      }
+    },
+    "cancel": {
+      "name": "Job abbrechen",
+      "description": "Bricht einen Job ab, den Home Assistant gestartet hat und noch verfolgt.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Windmill-Workspace",
+          "description": "Die konfigurierte Windmill-Instanz und der Workspace, zu dem der Job gehört."
+        },
+        "job_id": {
+          "name": "Job-ID",
+          "description": "Kennung, die von der Ausführen-Aktion zurückgegeben wurde."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unknown_config_entry": {
+      "message": "Der ausgewählte Windmill-Eintrag existiert nicht."
+    },
+    "entry_not_loaded": {
+      "message": "Der ausgewählte Windmill-Eintrag ist nicht geladen."
+    },
+    "runnable_not_selected": {
+      "message": "{path} ist in den Optionen der Windmill-Integration nicht ausgewählt."
+    },
+    "runnable_unavailable": {
+      "message": "{path} ist in Windmill derzeit nicht verfügbar."
+    },
+    "runnable_unsupported": {
+      "message": "{path} hat Argumente, die diese Integration nicht validieren kann."
+    },
+    "runnable_missing": {
+      "message": "Windmill kennt {path} nicht mehr."
+    },
+    "invalid_arguments": {
+      "message": "Die Argumente sind nicht JSON-kompatibel."
+    },
+    "arguments_too_large": {
+      "message": "Die Argumente überschreiten die unterstützte Größe."
+    },
+    "unknown_arguments": {
+      "message": "Unbekannte Argumente: {names}."
+    },
+    "missing_arguments": {
+      "message": "Fehlende erforderliche Argumente: {names}."
+    },
+    "invalid_argument_type": {
+      "message": "Das Argument {name} muss vom Typ {type} sein."
+    },
+    "invalid_argument_value": {
+      "message": "Das Argument {name} ist kein erlaubter Wert."
+    },
+    "invalid_auth": {
+      "message": "Windmill hat das Token abgelehnt."
+    },
+    "insufficient_permission": {
+      "message": "Das Token darf {path} nicht ausführen."
+    },
+    "cannot_connect": {
+      "message": "Verbindung zu Windmill nicht möglich."
+    },
+    "server_error": {
+      "message": "Windmill ist vorübergehend nicht verfügbar."
+    },
+    "unexpected_response": {
+      "message": "Windmill hat eine unerwartete Antwort zurückgegeben."
+    },
+    "pin_unavailable": {
+      "message": "{path} ist gepinnt, aber Windmill stellt keine Version zum Pinnen bereit. Wähle es erneut ohne Pinning aus."
+    },
+    "job_not_tracked": {
+      "message": "Home Assistant hat den Job {job_id} nicht gestartet oder verfolgt ihn nicht mehr."
+    },
+    "job_not_cancellable": {
+      "message": "Der Job {job_id} ist bereits abgeschlossen oder kann nicht abgebrochen werden."
+    }
+  },
+  "issues": {
+    "missing_permission": {
+      "title": "Windmill-Berechtigung für ein aktiviertes Feature fehlt",
+      "description": "Das von dieser Integration verwendete Windmill-Token darf `{capability}` nicht lesen, was das aktivierte Feature `{feature}` benötigt. Erteile dem Token die Berechtigung in Windmill oder schalte das Feature in den Integrationsoptionen aus. Diese Meldung verschwindet von selbst, sobald die Berechtigung wieder funktioniert."
+    },
+    "unsupported_capability": {
+      "title": "Windmill unterstützt ein aktiviertes Feature nicht",
+      "description": "Diese Windmill-Instanz bietet den Endpunkt `{capability}` nicht an, den das aktivierte Feature `{feature}` benötigt – meist, weil der Server älter als das Feature ist. Aktualisiere Windmill oder schalte das Feature in den Integrationsoptionen aus."
+    },
+    "worker_version_drift": {
+      "title": "Windmill-Worker-Gruppe läuft mit mehreren Versionen",
+      "description": "Die Worker-Gruppe `{group}` läuft seit mehr als 30 Minuten mit {versions} verschiedenen Windmill-Versionen. Während eines Rolling Upgrades ist das zu erwarten und es wird keine Meldung angezeigt; anhaltende Abweichung bedeutet meist, dass das Upgrade eines Workers fehlgeschlagen ist. Prüfe die Worker dieser Gruppe in Windmill."
+    }
+  }
+}
