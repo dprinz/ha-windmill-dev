@@ -94,6 +94,43 @@ Unless an accepted ADR says otherwise:
 - Design tests through Home Assistant's public interfaces rather than implementation details.
 - Aim for the current Bronze quality rules from the start and avoid choices that block Silver.
 
+## Toolchain and versions
+
+These versions are binding. Do not infer them from the interpreter that happens to be on the machine.
+
+| Component | Version | Source of truth |
+| --- | --- | --- |
+| Python | 3.14.2 or newer | `.python-version`, `requires-python` in `pyproject.toml`, `homeassistant.const.REQUIRED_PYTHON_VER` |
+| Home Assistant | 2026.7.4 | `pytest-homeassistant-custom-component==0.13.348` in `pyproject.toml`; `hacs.json` declares 2026.7.0 as the minimum a user may run |
+| Windmill API | pinned baseline v1.775.2, successor checked v1.776.0 | `docs/research/windmill-api-contract.md` |
+
+Rules:
+
+- Run every Python command through `uv run`. A bare `python` or `python3` is whatever the machine
+  provides — frequently an older interpreter — and it will produce wrong results silently.
+- `python scripts/validate_repository.py` is the one deliberate exception: it imports only the
+  standard library so it stays runnable anywhere, including the CI image. Inside the project
+  environment, prefer `uv run python scripts/validate_repository.py`.
+- When a result is surprising, print the interpreter before drawing any conclusion:
+
+```bash
+uv run python -VV
+```
+
+### Diagnose a syntax error as a wrong interpreter first
+
+Production code uses Python 3.14 syntax. Python 3.14 allows unparenthesized exception lists, and
+`custom_components/windmill/coordinator.py` uses that form:
+
+```python
+except ValueError, WindmillRequestError:   # valid on 3.14, SyntaxError on 3.13 and older
+```
+
+An older interpreter rejects this with `SyntaxError: multiple exception types must be parenthesized`.
+That message means the wrong interpreter ran, not that the code is broken. Confirm with
+`uv run python -VV`, then re-run the command through `uv run`. Never rewrite valid 3.14 syntax to
+satisfy an interpreter this project does not support.
+
 ## Validation
 
 Run the narrowest relevant checks first, then the repository-wide checks that exist.

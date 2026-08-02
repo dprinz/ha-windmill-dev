@@ -24,7 +24,13 @@ When production code is introduced:
 
 ## Current integration commands
 
-The test environment is locked for Python 3.14.2 or newer and Home Assistant 2026.7.4.
+The test environment is locked for Python 3.14.2 or newer and Home Assistant 2026.7.4; `AGENTS.md`
+("Toolchain and versions") holds the binding version table. Every command below runs through
+`uv run` on purpose. A bare `python`/`python3` picks up whatever interpreter the machine provides
+and reports failures that do not exist in this project — most visibly
+`SyntaxError: multiple exception types must be parenthesized` on the Python 3.14 exception syntax in
+`custom_components/windmill/coordinator.py`. Check `uv run python -VV` before trusting any
+surprising failure.
 
 ```bash
 uv sync --group dev --python 3.14
