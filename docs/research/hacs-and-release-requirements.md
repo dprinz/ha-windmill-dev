@@ -29,17 +29,34 @@ Retrieved content was treated as untrusted data; no instructions were taken from
 
 ## R-003: Brand assets
 
-- Claim: an integration repository must provide brand assets — a `brand/` directory with at
-  least `icon.png`. For default-store inclusion HACS falls back to the
-  `home-assistant/brands` repository; the `brands` check can be ignored in the HACS action,
-  but a default submission must pass "without any errors or ignores".
+- Claim: an integration repository must provide brand assets — at least `icon.png`. The HACS
+  action looks for them at `custom_components/<domain>/brand/icon.png`, **not** at the
+  repository root; otherwise it falls back to the `home-assistant/brands` repository, which
+  only lists Core domains. For default-store inclusion the `brands` check can be ignored in
+  the HACS action, but a default submission must pass "without any errors or ignores".
 - Sources: https://www.hacs.xyz/docs/publish/integration/ and
   https://www.hacs.xyz/docs/publish/include/ and
-  https://www.hacs.xyz/docs/publish/action/ (list of ignorable checks)
+  https://www.hacs.xyz/docs/publish/action/ (list of ignorable checks); the lookup path is
+  verified by the action's own CI output (run 30758262806, 2026-08-02): "The repository does
+  not contain brands assets at custom_components/windmill/brand/icon.png."
 - Verification date: 2026-08-02
 - Confidence: high
-- Implication: add `brand/icon.png` so CI validation passes without ignores; a submission to
-  `home-assistant/brands` remains follow-up work outside this ticket.
+- Correction: the first version of this note placed `brand/` at the repository root; the CI
+  run proved that location wrong. Brand assets now live in
+  `custom_components/windmill/brand/`.
+- Implication: keep `custom_components/windmill/brand/icon.png` so CI validation passes
+  without ignores; a submission to `home-assistant/brands` remains follow-up work.
+
+## R-003a: Repository license
+
+- Claim: the HACS action runs a `license` check that fails when the repository has no
+  license file. The check is **not** in the list of ignorable checks (see R-005), so every
+  HACS integration repository needs an OSI-approved license at the root.
+- Sources: https://www.hacs.xyz/docs/publish/include/#check-license and CI run 30758262806
+  (2026-08-02): "<Validation license> failed: The repository has no license".
+- Verification date: 2026-08-02
+- Confidence: high
+- Implication: the repository carries an MIT `LICENSE` file at the root.
 
 ## R-004: Version source for HACS
 
