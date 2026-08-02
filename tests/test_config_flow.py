@@ -2,6 +2,7 @@
 
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -21,7 +22,10 @@ from custom_components.windmill.api import (
     WindmillAuthorizationError,
     WindmillConnection,
     WindmillConnectionError,
+    WindmillDetailedHealth,
     WindmillEdition,
+    WindmillHealthState,
+    WindmillHealthStatus,
     WindmillIdentity,
     WindmillNotFoundError,
     WindmillProtocolError,
@@ -59,6 +63,20 @@ WORKSPACES = (
     WindmillWorkspaceInfo(id="admin", name="Admin"),
 )
 SERVER = WindmillServerInfo(edition=WindmillEdition.COMMUNITY, version="v1.775.2")
+HEALTH = WindmillHealthStatus(
+    status=WindmillHealthState.HEALTHY,
+    checked_at=datetime(2026, 8, 2, 10, 0, tzinfo=UTC),
+    database_healthy=True,
+    workers_alive=2,
+)
+DETAILED_HEALTH = WindmillDetailedHealth(
+    status=WindmillHealthState.HEALTHY,
+    checked_at=datetime(2026, 8, 2, 10, 0, tzinfo=UTC),
+    database_healthy=True,
+    workers_alive=2,
+    pending_jobs=1,
+    running_jobs=0,
+)
 IDENTITY = WindmillIdentity(username="automation", is_admin=False, is_super_admin=False)
 CONNECTION = WindmillConnection(identity=IDENTITY, server=SERVER)
 
@@ -119,6 +137,8 @@ def patched_client(
     workspaces: Any = WORKSPACES,
     connection: Any = CONNECTION,
     capabilities: Any = FULL_CAPABILITIES,
+    health: Any = HEALTH,
+    detailed: Any = DETAILED_HEALTH,
 ) -> Iterator[dict[str, AsyncMock]]:
     """Patch every network operation the flows may perform."""
     mocks = {
@@ -126,12 +146,18 @@ def patched_client(
         "workspaces": _as_mock(workspaces),
         "connect": _as_mock(connection),
         "capabilities": _as_mock(capabilities),
+        "health": _as_mock(health),
+        "detailed": _as_mock(detailed),
     }
     targets = {
         "server": "custom_components.windmill.api.WindmillInstanceClient.async_get_server_info",
         "workspaces": "custom_components.windmill.api.WindmillInstanceClient.async_list_workspaces",
         "connect": "custom_components.windmill.api.WindmillClient.async_connect",
         "capabilities": "custom_components.windmill.api.WindmillClient.async_discover_capabilities",
+        "health": "custom_components.windmill.api.WindmillInstanceClient.async_get_health_status",
+        "detailed": (
+            "custom_components.windmill.api.WindmillInstanceClient.async_get_detailed_health"
+        ),
     }
     with ExitStack() as stack:
         for key, target in targets.items():

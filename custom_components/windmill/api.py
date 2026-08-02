@@ -163,6 +163,18 @@ class WindmillHealthStatus:
 
 
 @dataclass(frozen=True, slots=True)
+class WindmillDetailedHealth:
+    """Bounded projection of the authenticated detailed health response."""
+
+    status: WindmillHealthState
+    checked_at: datetime
+    database_healthy: bool
+    workers_alive: int | None
+    pending_jobs: int | None
+    running_jobs: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class PageRequest:
     """Validated Windmill page parameters shared by bounded list operations."""
 
@@ -231,6 +243,11 @@ def _is_loopback(host: str) -> bool:
 def _is_bounded_text(value: Any) -> TypeIs[str]:
     """Return whether an untrusted value is a short non-empty string."""
     return isinstance(value, str) and bool(value.strip()) and len(value) <= MAX_TEXT_FIELD_LENGTH
+
+
+def _is_count(value: Any) -> TypeIs[int]:
+    """Return whether an untrusted value is a non-negative integer count."""
+    return not isinstance(value, bool) and isinstance(value, int) and value >= 0
 
 
 def normalize_base_url(value: str) -> str:
@@ -371,6 +388,21 @@ class WindmillInstanceClient:
             authentication_required=False,
         )
         return self._parse_health_status(self._decode_json(response))
+
+    async def async_get_detailed_health(self) -> WindmillDetailedHealth:
+        """Return the bounded authenticated detailed-health projection."""
+        response = await self._async_get(
+            "/api/health/detailed",
+            authenticated=True,
+            accept="application/json",
+            body_statuses=frozenset({200, 503}),
+        )
+        self._raise_for_status(
+            response,
+            success_statuses=frozenset({200, 503}),
+            not_found=WindmillNotFoundError,
+        )
+        return self._parse_detailed_health(self._decode_json(response))
 
     async def _probe_update_visibility(self) -> CapabilityAvailability:
         """Probe only the bounded update-check contract, not deployment eligibility."""
@@ -586,11 +618,7 @@ class WindmillInstanceClient:
         workers_alive = data.get("workers_alive")
         if not isinstance(database_healthy, bool):
             raise WindmillProtocolError("Windmill returned an invalid database health value")
-        if (
-            isinstance(workers_alive, bool)
-            or not isinstance(workers_alive, int)
-            or workers_alive < 0
-        ):
+        if not _is_count(workers_alive):
             raise WindmillProtocolError("Windmill returned an invalid worker count")
         return WindmillHealthStatus(
             status=status,
@@ -598,6 +626,50 @@ class WindmillInstanceClient:
             database_healthy=database_healthy,
             workers_alive=workers_alive,
         )
+
+    @classmethod
+    def _parse_detailed_health(cls, data: Any) -> WindmillDetailedHealth:
+        """Allowlist five bounded facts and discard the rest of detailed health."""
+        if not isinstance(data, dict):
+            raise WindmillProtocolError("Windmill returned an invalid detailed health response")
+        raw_status = data.get("status")
+        version = data.get("version")
+        checks = data.get("checks")
+        if not isinstance(raw_status, str) or raw_status not in set(WindmillHealthState):
+            raise WindmillProtocolError("Windmill returned an invalid detailed health state")
+        checked_at = cls._parse_timestamp(data.get("checked_at"), "detailed health")
+        if not isinstance(version, str) or not version or len(version) > 128:
+            raise WindmillProtocolError("Windmill returned an invalid detailed health version")
+        if not isinstance(checks, dict):
+            raise WindmillProtocolError("Windmill returned invalid detailed health checks")
+
+        database = checks.get("database")
+        if not isinstance(database, dict) or not isinstance(database.get("healthy"), bool):
+            raise WindmillProtocolError("Windmill returned an invalid detailed database check")
+
+        workers_alive = cls._optional_count(checks.get("workers"), "active_count", "workers")
+        pending_jobs = cls._optional_count(checks.get("queue"), "pending_jobs", "queue")
+        running_jobs = cls._optional_count(checks.get("queue"), "running_jobs", "queue")
+        return WindmillDetailedHealth(
+            status=WindmillHealthState(raw_status),
+            checked_at=checked_at,
+            database_healthy=database["healthy"],
+            workers_alive=workers_alive,
+            pending_jobs=pending_jobs,
+            running_jobs=running_jobs,
+        )
+
+    @staticmethod
+    def _optional_count(check: Any, field: str, name: str) -> int | None:
+        """Read one bounded count from a nullable detailed-health check."""
+        if check is None:
+            return None
+        if not isinstance(check, dict):
+            raise WindmillProtocolError(f"Windmill returned an invalid detailed {name} check")
+        value = check.get(field)
+        if not _is_count(value):
+            raise WindmillProtocolError(f"Windmill returned an invalid detailed {name} count")
+        return value
 
     @staticmethod
     def _parse_timestamp(value: Any, endpoint: str) -> datetime:
@@ -750,7 +822,7 @@ class WindmillClient(WindmillInstanceClient):
                 success_statuses=body_statuses,
                 not_found=WindmillNotFoundError,
             )
-            self._validate_detailed_health(self._decode_json(response))
+            self._parse_detailed_health(self._decode_json(response))
 
         return await self._probe(validate())
 
@@ -801,20 +873,3 @@ class WindmillClient(WindmillInstanceClient):
             is_admin=is_admin,
             is_super_admin=is_super_admin,
         )
-
-    @classmethod
-    def _validate_detailed_health(cls, data: Any) -> None:
-        """Validate and discard the required root of detailed health."""
-        if not isinstance(data, dict):
-            raise WindmillProtocolError("Windmill returned an invalid detailed health response")
-        status = data.get("status")
-        checked_at = data.get("checked_at")
-        version = data.get("version")
-        checks = data.get("checks")
-        if status not in set(WindmillHealthState):
-            raise WindmillProtocolError("Windmill returned an invalid detailed health state")
-        cls._parse_timestamp(checked_at, "detailed health")
-        if not isinstance(version, str) or not version or len(version) > 128:
-            raise WindmillProtocolError("Windmill returned an invalid detailed health version")
-        if not isinstance(checks, dict):
-            raise WindmillProtocolError("Windmill returned invalid detailed health checks")

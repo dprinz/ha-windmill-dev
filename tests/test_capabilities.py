@@ -42,7 +42,12 @@ DETAILED_BODY = {
     "status": "healthy",
     "checked_at": "2026-08-02T10:00:00Z",
     "version": "CE 1.775.2",
-    "checks": {"database": {}, "readiness": {}},
+    "checks": {
+        "database": {"healthy": True, "latency_ms": 3, "pool": {"size": 4, "idle": 2}},
+        "workers": {"healthy": True, "active_count": 2, "versions": ["1.775.2"]},
+        "queue": {"pending_jobs": 1, "running_jobs": 1},
+        "readiness": {"healthy": True},
+    },
 }
 SENTINEL_SECRET = "must-not-be-retained-secret"
 

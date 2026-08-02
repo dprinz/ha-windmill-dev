@@ -79,6 +79,32 @@
       "reconfigure_successful": "The Windmill connection was updated."
     }
   },
+  "entity": {
+    "binary_sensor": {
+      "database": {
+        "name": "Database"
+      }
+    },
+    "sensor": {
+      "instance_health": {
+        "name": "Health",
+        "state": {
+          "healthy": "Healthy",
+          "degraded": "Degraded",
+          "unhealthy": "Unhealthy"
+        }
+      },
+      "alive_workers": {
+        "name": "Alive workers"
+      },
+      "pending_jobs": {
+        "name": "Pending jobs"
+      },
+      "running_jobs": {
+        "name": "Running jobs"
+      }
+    }
+  },
   "options": {
     "step": {
       "init": {

@@ -9,7 +9,7 @@ from .api import (
     WindmillIdentity,
     WindmillServerInfo,
 )
-from .coordinator import WindmillCapabilityCoordinator
+from .coordinator import WindmillCapabilityCoordinator, WindmillHealthCoordinator
 
 
 @dataclass(slots=True)
@@ -19,6 +19,7 @@ class WindmillRuntimeData:
     client: WindmillClient
     connection: WindmillConnection
     capability_coordinator: WindmillCapabilityCoordinator
+    health_coordinator: WindmillHealthCoordinator | None = None
 
     @property
     def identity(self) -> WindmillIdentity:

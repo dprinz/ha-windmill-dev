@@ -1,5 +1,6 @@
 """Tests for Windmill config-entry setup, unload and reload."""
 
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -19,6 +20,8 @@ from custom_components.windmill.api import (
     WindmillConnection,
     WindmillConnectionError,
     WindmillEdition,
+    WindmillHealthState,
+    WindmillHealthStatus,
     WindmillIdentity,
     WindmillProtocolError,
     WindmillRateLimitError,
@@ -42,6 +45,12 @@ ENTRY_DATA = {
     CONF_TOKEN: "obviously-fake-test-token",
 }
 IDENTITY = WindmillIdentity(username="automation", is_admin=False, is_super_admin=False)
+HEALTH = WindmillHealthStatus(
+    status=WindmillHealthState.HEALTHY,
+    checked_at=datetime(2026, 8, 2, 10, 0, tzinfo=UTC),
+    database_healthy=True,
+    workers_alive=2,
+)
 CONNECTION = WindmillConnection(
     identity=IDENTITY,
     server=WindmillServerInfo(edition=WindmillEdition.COMMUNITY, version="v1.775.2"),
@@ -102,6 +111,10 @@ async def test_setup_unload_and_reload(hass: HomeAssistant) -> None:
         patch(
             "custom_components.windmill.api.WindmillClient.async_discover_capabilities",
             new=discover,
+        ),
+        patch(
+            "custom_components.windmill.api.WindmillInstanceClient.async_get_health_status",
+            new=AsyncMock(return_value=HEALTH),
         ),
         patch(
             "custom_components.windmill.coordinator.WindmillCapabilityCoordinator.async_shutdown",
@@ -189,6 +202,10 @@ async def test_capability_coordinator_setup_error_mapping(
         patch(
             "custom_components.windmill.api.WindmillClient.async_discover_capabilities",
             new=AsyncMock(side_effect=error),
+        ),
+        patch(
+            "custom_components.windmill.api.WindmillInstanceClient.async_get_health_status",
+            new=AsyncMock(return_value=HEALTH),
         ),
     ):
         assert not await hass.config_entries.async_setup(entry.entry_id)

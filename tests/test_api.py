@@ -519,3 +519,114 @@ async def test_workspace_listing_status_mapping(
 
     with pytest.raises(exception_type):
         await client.async_list_workspaces()
+
+
+DETAILED_URL = f"{BASE_URL}/api/health/detailed"
+DETAILED_BODY = {
+    "status": "degraded",
+    "checked_at": "2026-08-02T10:00:00Z",
+    "version": "CE 1.775.2",
+    "checks": {
+        "database": {"healthy": True, "latency_ms": 3, "pool": {"size": 4, "idle": 2}},
+        "workers": {"healthy": True, "active_count": 2, "versions": ["1.775.2"]},
+        "queue": {"pending_jobs": 3, "running_jobs": 1},
+        "readiness": {"healthy": True},
+    },
+}
+
+
+async def test_detailed_health_allowlists_bounded_fields(
+    hass: HomeAssistant, aioclient_mock: object
+) -> None:
+    """Detailed health keeps five bounded facts and discards everything else."""
+    aioclient_mock.get(  # type: ignore[attr-defined]
+        DETAILED_URL,
+        json=DETAILED_BODY,
+        headers=JSON_HEADERS,
+    )
+    client = WindmillInstanceClient(async_get_clientsession(hass), BASE_URL, TOKEN)
+
+    detailed = await client.async_get_detailed_health()
+
+    assert detailed.status is WindmillHealthState.DEGRADED
+    assert detailed.database_healthy is True
+    assert detailed.workers_alive == 2
+    assert detailed.pending_jobs == 3
+    assert detailed.running_jobs == 1
+    assert not hasattr(detailed, "version")
+    call = aioclient_mock.mock_calls[0]  # type: ignore[attr-defined]
+    assert call[3]["Authorization"] == f"Bearer {TOKEN}"
+
+
+async def test_detailed_health_accepts_null_optional_checks(
+    hass: HomeAssistant, aioclient_mock: object
+) -> None:
+    """Nullable worker and queue checks become unknown counts, not failures."""
+    body = {
+        **DETAILED_BODY,
+        "status": "unhealthy",
+        "checks": {"database": {"healthy": False}, "workers": None, "queue": None},
+    }
+    aioclient_mock.get(DETAILED_URL, json=body, headers=JSON_HEADERS, status=503)  # type: ignore[attr-defined]
+    client = WindmillInstanceClient(async_get_clientsession(hass), BASE_URL, TOKEN)
+
+    detailed = await client.async_get_detailed_health()
+
+    assert detailed.status is WindmillHealthState.UNHEALTHY
+    assert detailed.database_healthy is False
+    assert detailed.workers_alive is None
+    assert detailed.pending_jobs is None
+    assert detailed.running_jobs is None
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        [],
+        {**DETAILED_BODY, "status": "mystery"},
+        {**DETAILED_BODY, "checked_at": "not-a-time"},
+        {**DETAILED_BODY, "version": ""},
+        {**DETAILED_BODY, "checks": {}},
+        {**DETAILED_BODY, "checks": {"database": {"healthy": "yes"}}},
+        {**DETAILED_BODY, "checks": {"database": {"healthy": True}, "queue": []}},
+        {
+            **DETAILED_BODY,
+            "checks": {"database": {"healthy": True}, "queue": {"pending_jobs": -1}},
+        },
+        {
+            **DETAILED_BODY,
+            "checks": {"database": {"healthy": True}, "workers": {"active_count": True}},
+        },
+    ],
+)
+async def test_detailed_health_rejects_invalid_models(
+    hass: HomeAssistant, aioclient_mock: object, body: object
+) -> None:
+    """A malformed detailed health response fails closed."""
+    aioclient_mock.get(DETAILED_URL, json=body, headers=JSON_HEADERS)  # type: ignore[attr-defined]
+    client = WindmillInstanceClient(async_get_clientsession(hass), BASE_URL, TOKEN)
+
+    with pytest.raises(WindmillProtocolError):
+        await client.async_get_detailed_health()
+
+
+@pytest.mark.parametrize(
+    ("status", "exception_type"),
+    [
+        (HTTPStatus.UNAUTHORIZED, WindmillAuthenticationError),
+        (HTTPStatus.FORBIDDEN, WindmillAuthorizationError),
+        (HTTPStatus.NOT_FOUND, WindmillNotFoundError),
+    ],
+)
+async def test_detailed_health_status_mapping(
+    hass: HomeAssistant,
+    aioclient_mock: object,
+    status: HTTPStatus,
+    exception_type: type[Exception],
+) -> None:
+    """Detailed health keeps authentication and permission failures distinct."""
+    aioclient_mock.get(DETAILED_URL, status=status)  # type: ignore[attr-defined]
+    client = WindmillInstanceClient(async_get_clientsession(hass), BASE_URL, TOKEN)
+
+    with pytest.raises(exception_type):
+        await client.async_get_detailed_health()
