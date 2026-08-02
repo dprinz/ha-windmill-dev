@@ -247,6 +247,13 @@ change only when the entry is reloaded (see `docs/architecture/decisions/0002-wo
   your token and role may access, on any edition. An enabled feature whose permission is missing
   creates a repair issue instead of failing the whole entry.
 
+## Supported versions and known limitations
+
+The evidence-based compatibility statement — tested Home Assistant and Windmill versions, edition
+behavior, live-smoke coverage and the accepted limitations of v1 — lives in
+`docs/product/supported-versions-and-limitations.md`. Read it before upgrading Windmill or
+reporting a compatibility issue.
+
 ## Removing the integration
 
 1. Remove the config entry under **Settings → Devices & services → Windmill**. This also deletes
