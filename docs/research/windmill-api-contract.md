@@ -359,6 +359,33 @@ explicit WMHA-0004 gate; detailed-health token variants and Cloud behavior remai
 WMHA-0005/0006 gates. The client never sends a token to the public `/version` endpoint, so a
 "restricted-token version probe" is not part of its policy.
 
+A follow-up live verification on 2026-08-02 (WMHA-0026, disposable local CE `v1.775.2`,
+throwaway workspace, granular-scoped token minted via `POST /api/users/tokens/create`)
+closed the restricted-token gates above:
+
+- `whoami` onboarding and workspace listing succeeded with `users:read` + `workspaces:read`.
+- Script and flow execution by path **and** by pinned hash/version all returned `201` with
+  `jobs:run:scripts` / `jobs:run:flows` (domain-level, no path suffix needed); jobs completed
+  `success`. The "instance test" caveat for hash/version enforcement is resolved.
+- Cancellation returned `200` with `jobs:write` (plus `jobs:read`); the job was observed
+  `canceled`.
+- Detailed health with a granular-scoped token returned **`400`** with body "Could not
+  extract domain from route: /api/health/detailed" — confirming the pinned-source prediction
+  that scoped tokens fail in the scope middleware before the handler (no `health` domain
+  exists), with the precise status code now observed. An unscoped token returned `200`.
+  Note: the client's capability discovery maps this `400` to `unsupported` rather than
+  `unauthorized` (backlog ticket WMHA-0030).
+- A token missing `workers:read` correctly produced `403` on the worker list, mapped by the
+  client to `unauthorized` — the five-state capability behavior works against a live
+  instance.
+- A busy-workspace check (9 concurrent jobs: success/failure/canceled) confirmed the bounded
+  job projection: UUID deduplication, correct outcome classification, and no payload fields
+  (`args`, `result`, `logs`, `email`, `permissioned_as`) in the parsed model.
+- One transient observation consistent with the WMHA-0015 propagation race: the `jobs/list`
+  capability probe failed once when fired seconds after workspace creation, and succeeded on
+  every repeat; not a client defect.
+- Cloud tenant behavior remains unverified — no test tenant exists (human decision).
+
 ## Requirement traceability
 
 | Requirement | Contract section |

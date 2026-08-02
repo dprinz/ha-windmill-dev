@@ -20,7 +20,7 @@ It states only what evidence supports.
 | Self-hosted CE `v1.768.0` | public probes observed | read-only probe on 2026-08-02: `/api/version` and `/api/health/status` returned 200; protected endpoints returned 401 without a token (`docs/research/windmill-api-contract.md`) |
 | Self-hosted EE | contract-level | same pinned source; edition differences are capability-probed at runtime; no live EE instance was available |
 | Older self-hosted versions | degraded by design | endpoints introduced after a server's version probe as `unsupported` and disable only the affected feature; no minimum version is claimed |
-| Windmill Cloud | unverified — release risk | no Cloud test tenant exists; behavior is designed from the contract (update entity `not_applicable`, instance-global health optional) but has no live coverage |
+| Windmill Cloud | unverified — release risk | no Cloud test tenant exists; behavior is designed from the contract (update entity `not_applicable`, instance-global health optional) but has no live coverage; re-confirmed unverifiable on 2026-08-02 (WMHA-0026) |
 
 ### Live smoke evidence (2026-08-02, disposable local CE `v1.775.2`)
 
@@ -102,11 +102,28 @@ These are accepted, documented trade-offs of v1. Each links its source.
 
 Recorded honestly instead of claimed:
 
-- Restricted-token (least-privilege) execution and cancellation were verified against the pinned
-  upstream authorization source and by mocked tests, but not against a live restricted token; the
-  live smoke used a throwaway superadmin token on a disposable instance.
-- Detailed-health behavior for granular-scoped tokens follows the pinned scope middleware source;
-  no live granular token was tested.
-- No observation of a busy production workspace; polling bounds (3 pages x 100 jobs per minute)
-  are client policy validated by tests, not by production load.
-- Windmill Cloud has no live coverage (see above).
+- ~~Restricted-token (least-privilege) execution and cancellation~~ **Closed 2026-08-02
+  (WMHA-0026 live check, disposable CE `v1.775.2`):** a granular-scoped token
+  (`users:read`, `workspaces:read`, `jobs:read`, `jobs:write`, `jobs:run:scripts`,
+  `jobs:run:flows`, `scripts:read`, `flows:read`), minted through
+  `POST /api/users/tokens/create` on a throwaway workspace, drove the integration's own
+  client successfully: whoami onboarding, workspace listing, script and flow execution by
+  path **and** by pinned hash/version (all `201`, jobs completed `success`), and
+  cancellation (`200`, job observed `canceled`). Capability discovery mapped the missing
+  `workers:read` scope correctly to `unauthorized`.
+- ~~Detailed-health behavior for granular-scoped tokens~~ **Closed 2026-08-02 (WMHA-0026):**
+  a granular-scoped token receives `400` ("Could not extract domain from route:
+  /api/health/detailed") — it fails in the scope middleware before the handler, exactly as
+  the pinned source predicted; an unscoped token receives `200`. Detailed health therefore
+  stays an optional capability that needs an effectively unscoped token (backlog ticket
+  WMHA-0030 tracks the `400` surfacing as `unsupported` rather than `unauthorized` in
+  capability discovery).
+- ~~No observation of a busy production workspace~~ **Narrowed 2026-08-02 (WMHA-0026):** a
+  busy disposable workspace with real concurrent traffic (6 successful, 2 failed, 1
+  cancelled job) was observed through the client's bounded projection: all 9 jobs were
+  deduplicated by UUID and classified correctly, and no payload fields (args, results,
+  logs, emails) entered the parsed model. This is still a synthetic load, not production
+  scale; the polling bounds remain client policy validated by tests.
+- Windmill Cloud has no live coverage (see above) — **re-confirmed unverifiable 2026-08-02
+  (WMHA-0026):** no Cloud test tenant could be obtained without production credentials;
+  provisioning one remains a human decision.

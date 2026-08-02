@@ -47,14 +47,26 @@ closed or narrowed the following gates recorded in `docs/research/windmill-api-c
   five-state capability discovery (execution/cancellation correctly `not_applicable` before
   target selection), detailed health with an unscoped token, worker groups and worker listing.
 
-Still open after WMHA-0015:
+Still open after WMHA-0015 — **all four resolved or re-confirmed by WMHA-0026 on 2026-08-02**
+(live checks against a disposable local CE `v1.775.2` with a granular-scoped token; method and
+dated results in the WMHA-0026 ticket and `docs/product/supported-versions-and-limitations.md`):
 
-1. Restricted-token (least-privilege) onboarding, execution and cancellation against a live
-   instance (WMHA-0004/0009/0010) — no restricted token was minted in the smoke test.
-2. Detailed-health behavior for granular-scoped tokens (WMHA-0005) — only an unscoped token was
-   tested live.
-3. Cloud tenant behavior for health and workers (WMHA-0005/0006) — no Cloud test tenant exists.
-4. Observation against a busy real workspace (WMHA-0007).
+1. ~~Restricted-token (least-privilege) onboarding, execution and cancellation against a live
+   instance (WMHA-0004/0009/0010)~~ — **closed 2026-08-02:** granular-scoped token
+   (`users:read`, `workspaces:read`, `jobs:read`, `jobs:write`, `jobs:run:scripts`,
+   `jobs:run:flows`, `scripts:read`, `flows:read`) succeeded for whoami onboarding, workspace
+   listing, script/flow execution by path and by pinned hash/version (all `201`), and
+   cancellation (`200`, observed `canceled`).
+2. ~~Detailed-health behavior for granular-scoped tokens (WMHA-0005)~~ — **closed 2026-08-02:**
+   granular-scoped token → `400` from the scope middleware (no `health` domain, as the pinned
+   source predicted); unscoped token → `200`. The `400` surfaces as `unsupported` instead of
+   `unauthorized` in capability discovery — tracked in backlog ticket WMHA-0030.
+3. ~~Cloud tenant behavior for health and workers (WMHA-0005/0006)~~ — **re-confirmed
+   unverifiable 2026-08-02:** no Cloud test tenant exists; obtaining one is a human decision.
+4. ~~Observation against a busy real workspace (WMHA-0007)~~ — **closed at synthetic-load level
+   2026-08-02:** 9 concurrent jobs (success/failure/canceled) on a disposable workspace were all
+   deduplicated and correctly classified through the bounded projection, with no payload fields
+   in the parsed model. Production-scale observation remains out of reach by design.
 
 These are evidence gaps, not implementation gaps, and are published as release risks in
 `docs/product/supported-versions-and-limitations.md`.
