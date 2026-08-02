@@ -1,0 +1,24 @@
+run:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: windmill
+    kind:
+      required: true
+      selector:
+        select:
+          options:
+            - script
+            - flow
+    path:
+      required: true
+      example: u/automation/lights
+      selector:
+        text:
+    arguments:
+      required: false
+      example: '{"room": "kitchen"}'
+      selector:
+        object:

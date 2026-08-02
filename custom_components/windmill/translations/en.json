@@ -37,13 +37,15 @@
           "worker_groups": "Worker groups",
           "worker_details": "Individual worker details",
           "run_observation": "Job and run observation",
-          "update_entity": "Update availability"
+          "update_entity": "Update availability",
+          "runnable_buttons": "Buttons for parameterless runnables"
         },
         "data_description": {
           "detailed_health": "Administrative: needs a token that Windmill accepts on the detailed health endpoint.",
           "worker_groups": "Administrative: exposes alive workers and version drift per worker group.",
           "worker_details": "High cardinality: adds one entity per worker instance and is meant for self-hosted operators.",
-          "update_entity": "Self-hosted only. Managed Windmill Cloud deployments are updated by Windmill."
+          "update_entity": "Self-hosted only. Managed Windmill Cloud deployments are updated by Windmill.",
+          "runnable_buttons": "Optional: adds one button per selected runnable that needs no arguments. The action stays available either way."
         }
       },
       "reauth_confirm": {
@@ -140,6 +142,11 @@
           }
         }
       }
+    },
+    "button": {
+      "run_runnable": {
+        "name": "Run {path}"
+      }
     }
   },
   "options": {
@@ -160,13 +167,15 @@
           "worker_groups": "Worker groups",
           "worker_details": "Individual worker details",
           "run_observation": "Job and run observation",
-          "update_entity": "Update availability"
+          "update_entity": "Update availability",
+          "runnable_buttons": "Buttons for parameterless runnables"
         },
         "data_description": {
           "detailed_health": "Administrative: needs a token that Windmill accepts on the detailed health endpoint.",
           "worker_groups": "Administrative: exposes alive workers and version drift per worker group.",
           "worker_details": "High cardinality: adds one entity per worker instance and is meant for self-hosted operators.",
-          "update_entity": "Self-hosted only. Managed Windmill Cloud deployments are updated by Windmill."
+          "update_entity": "Self-hosted only. Managed Windmill Cloud deployments are updated by Windmill.",
+          "runnable_buttons": "Optional: adds one button per selected runnable that needs no arguments. The action stays available either way."
         }
       },
       "runnables": {
@@ -183,6 +192,86 @@
     },
     "error": {
       "too_many_runnables": "Select fewer runnables."
+    }
+  },
+  "services": {
+    "run": {
+      "name": "Run script or flow",
+      "description": "Starts a selected Windmill script or flow asynchronously and returns its job identifier.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Windmill workspace",
+          "description": "The configured Windmill instance and workspace to run in."
+        },
+        "kind": {
+          "name": "Kind",
+          "description": "Whether the runnable is a script or a flow."
+        },
+        "path": {
+          "name": "Path",
+          "description": "Path of a runnable you selected in the integration options."
+        },
+        "arguments": {
+          "name": "Arguments",
+          "description": "JSON-compatible arguments validated against the runnable's input schema."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unknown_config_entry": {
+      "message": "The selected Windmill entry does not exist."
+    },
+    "entry_not_loaded": {
+      "message": "The selected Windmill entry is not loaded."
+    },
+    "runnable_not_selected": {
+      "message": "{path} is not selected in the Windmill integration options."
+    },
+    "runnable_unavailable": {
+      "message": "{path} is currently unavailable in Windmill."
+    },
+    "runnable_unsupported": {
+      "message": "{path} has arguments this integration cannot validate."
+    },
+    "runnable_missing": {
+      "message": "Windmill no longer knows {path}."
+    },
+    "invalid_arguments": {
+      "message": "The arguments are not JSON-compatible."
+    },
+    "arguments_too_large": {
+      "message": "The arguments exceed the supported size."
+    },
+    "unknown_arguments": {
+      "message": "Unknown arguments: {names}."
+    },
+    "missing_arguments": {
+      "message": "Missing required arguments: {names}."
+    },
+    "invalid_argument_type": {
+      "message": "Argument {name} must be of type {type}."
+    },
+    "invalid_argument_value": {
+      "message": "Argument {name} is not an allowed value."
+    },
+    "invalid_auth": {
+      "message": "Windmill rejected the token."
+    },
+    "insufficient_permission": {
+      "message": "The token may not run {path}."
+    },
+    "cannot_connect": {
+      "message": "Cannot connect to Windmill."
+    },
+    "server_error": {
+      "message": "Windmill is temporarily unavailable."
+    },
+    "unexpected_response": {
+      "message": "Windmill returned an unexpected response."
+    },
+    "pin_unavailable": {
+      "message": "{path} is pinned, but Windmill does not expose a version to pin to. Select it again without pinning."
     }
   }
 }

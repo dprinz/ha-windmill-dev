@@ -17,6 +17,12 @@ OPT_WORKER_DETAILS = "worker_details"
 OPT_RUN_OBSERVATION = "run_observation"
 OPT_UPDATE_ENTITY = "update_entity"
 OPT_RUNNABLES = "runnables"
+OPT_RUNNABLE_BUTTONS = "runnable_buttons"
+
+ATTR_CONFIG_ENTRY_ID = "config_entry_id"
+ATTR_KIND = "kind"
+ATTR_PATH = "path"
+ATTR_ARGUMENTS = "arguments"
 
 MAX_SELECTED_RUNNABLES = 25
 
@@ -27,6 +33,7 @@ FEATURE_OPTIONS = (
     OPT_WORKER_DETAILS,
     OPT_RUN_OBSERVATION,
     OPT_UPDATE_ENTITY,
+    OPT_RUNNABLE_BUTTONS,
 )
 
 # Administrative and high-cardinality features stay disabled until a user opts in.
@@ -37,4 +44,5 @@ FEATURE_DEFAULTS = {
     OPT_WORKER_DETAILS: False,
     OPT_RUN_OBSERVATION: True,
     OPT_UPDATE_ENTITY: False,
+    OPT_RUNNABLE_BUTTONS: False,
 }

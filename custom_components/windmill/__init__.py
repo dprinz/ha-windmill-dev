@@ -51,16 +51,18 @@ from .coordinator import (
     load_selections,
 )
 from .models import WindmillRuntimeData
+from .services import async_register_services
 
 _LOGGER = logging.getLogger(__name__)
 
 type WindmillConfigEntry = ConfigEntry[WindmillRuntimeData]
 
-PLATFORMS = [Platform.BINARY_SENSOR, Platform.EVENT, Platform.SENSOR]
+PLATFORMS = [Platform.BINARY_SENSOR, Platform.BUTTON, Platform.EVENT, Platform.SENSOR]
 
 
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
-    """Set up the integration package; YAML configuration is intentionally ignored."""
+    """Register actions; YAML configuration of instances is intentionally ignored."""
+    async_register_services(hass)
     return True
 
 

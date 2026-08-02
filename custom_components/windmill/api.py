@@ -614,17 +614,58 @@ class WindmillInstanceClient:
         body_statuses: frozenset[int] = frozenset({200}),
     ) -> _WindmillResponse:
         """GET one bounded response through the central transport path."""
+        return await self._async_request(
+            "GET",
+            path,
+            authenticated=authenticated,
+            accept=accept,
+            params=params,
+            body_statuses=body_statuses,
+        )
+
+    async def _async_post(
+        self,
+        path: str,
+        *,
+        accept: str,
+        json_body: Mapping[str, Any],
+        body_statuses: frozenset[int] = frozenset({200, 201}),
+    ) -> _WindmillResponse:
+        """POST one bounded authenticated request through the central transport path."""
+        return await self._async_request(
+            "POST",
+            path,
+            authenticated=True,
+            accept=accept,
+            json_body=json_body,
+            body_statuses=body_statuses,
+        )
+
+    async def _async_request(
+        self,
+        method: str,
+        path: str,
+        *,
+        authenticated: bool,
+        accept: str,
+        params: Mapping[str, str | int] | None = None,
+        json_body: Mapping[str, Any] | None = None,
+        body_statuses: frozenset[int] = frozenset({200}),
+    ) -> _WindmillResponse:
+        """Perform one bounded request and read at most the response limit."""
         if not path.startswith("/") or "?" in path or "#" in path:
             raise WindmillProtocolError("Windmill client path is invalid")
         headers = {"Accept": accept}
         if authenticated:
             headers["Authorization"] = f"Bearer {self._token}"
 
+        send = self._session.post if method == "POST" else self._session.get
         try:
-            async with self._session.get(
+            async with send(
                 f"{self.base_url}{path}",
                 headers=headers,
                 params=params,
+                json=json_body,
                 timeout=self._timeout,
                 allow_redirects=False,
             ) as response:
@@ -1018,6 +1059,50 @@ class WindmillClient(WindmillInstanceClient):
         )
         self._raise_for_status(response, not_found=WindmillNotFoundError)
         return self._parse_runnable_details(kind, path, self._decode_json(response))
+
+    async def async_run_runnable(
+        self,
+        kind: RunnableKind,
+        path: str,
+        arguments: Mapping[str, Any],
+        *,
+        script_hash: str | None = None,
+        flow_version: int | None = None,
+    ) -> str:
+        """Start one selected runnable asynchronously and return its job identifier."""
+        workspace = quote(self.workspace, safe="")
+        safe_path = quote(normalize_runnable_path(path), safe="/")
+        if kind is RunnableKind.SCRIPT:
+            target = (
+                f"/api/w/{workspace}/jobs/run/h/{quote(script_hash, safe='')}"
+                if script_hash is not None
+                else f"/api/w/{workspace}/jobs/run/p/{safe_path}"
+            )
+        else:
+            target = (
+                f"/api/w/{workspace}/jobs/run/fv/{flow_version}"
+                if flow_version is not None
+                else f"/api/w/{workspace}/jobs/run/f/{safe_path}"
+            )
+
+        response = await self._async_post(
+            target,
+            accept="text/plain",
+            json_body=dict(arguments),
+        )
+        self._raise_for_status(
+            response,
+            success_statuses=frozenset({200, 201}),
+            not_found=WindmillNotFoundError,
+        )
+        self._require_content_type(response, "text/plain")
+        try:
+            job_id = response.payload.decode("utf-8").strip().strip('"')
+        except UnicodeDecodeError as err:
+            raise WindmillProtocolError("Windmill returned an invalid job identifier") from err
+        if not _is_uuid(job_id):
+            raise WindmillProtocolError("Windmill returned an invalid job identifier")
+        return job_id
 
     async def _async_get_identity(self) -> WindmillIdentity:
         """Validate the token and workspace through the verified whoami endpoint."""

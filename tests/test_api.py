@@ -1031,3 +1031,82 @@ async def test_unsupported_schemas_are_flagged(
 
     assert details.schema_supported is False
     assert details.schema_reason == reason
+
+
+RUN_SCRIPT_URL = f"{BASE_URL}/api/w/{WORKSPACE}/jobs/run/p/u/automation/lights"
+RUN_HASH_URL = f"{BASE_URL}/api/w/{WORKSPACE}/jobs/run/h/0123456789abcdef"
+RUN_FLOW_URL = f"{BASE_URL}/api/w/{WORKSPACE}/jobs/run/f/f/home/night"
+RUN_VERSION_URL = f"{BASE_URL}/api/w/{WORKSPACE}/jobs/run/fv/7"
+JOB_UUID = "00000000-0000-4000-8000-00000000000a"
+
+
+@pytest.mark.parametrize(
+    ("kind", "kwargs", "url"),
+    [
+        (RunnableKind.SCRIPT, {}, RUN_SCRIPT_URL),
+        (RunnableKind.SCRIPT, {"script_hash": "0123456789abcdef"}, RUN_HASH_URL),
+        (RunnableKind.FLOW, {}, RUN_FLOW_URL),
+        (RunnableKind.FLOW, {"flow_version": 7}, RUN_VERSION_URL),
+    ],
+)
+async def test_execution_addresses_the_selected_target(
+    hass: HomeAssistant,
+    aioclient_mock: object,
+    kind: RunnableKind,
+    kwargs: dict[str, object],
+    url: str,
+) -> None:
+    """Latest and pinned addressing use the documented execution endpoints."""
+    aioclient_mock.post(url, text=JOB_UUID, headers=TEXT_HEADERS, status=201)  # type: ignore[attr-defined]
+    client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
+    path = "u/automation/lights" if kind is RunnableKind.SCRIPT else "f/home/night"
+
+    job_id = await client.async_run_runnable(kind, path, {"room": "kitchen"}, **kwargs)
+
+    assert job_id == JOB_UUID
+    call = aioclient_mock.mock_calls[0]  # type: ignore[attr-defined]
+    assert call[3]["Authorization"] == f"Bearer {TOKEN}"
+    assert call[2] == {"room": "kitchen"}
+
+
+@pytest.mark.parametrize("body", ["not-a-uuid", "", '"00000000-0000-4000-8000-00000000000z"'])
+async def test_execution_rejects_invalid_job_identifiers(
+    hass: HomeAssistant, aioclient_mock: object, body: str
+) -> None:
+    """An unusable job identifier fails closed instead of being registered."""
+    aioclient_mock.post(RUN_SCRIPT_URL, text=body, headers=TEXT_HEADERS, status=201)  # type: ignore[attr-defined]
+    client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
+
+    with pytest.raises(WindmillProtocolError):
+        await client.async_run_runnable(RunnableKind.SCRIPT, "u/automation/lights", {})
+
+
+@pytest.mark.parametrize(
+    ("status", "exception_type"),
+    [
+        (HTTPStatus.UNAUTHORIZED, WindmillAuthenticationError),
+        (HTTPStatus.FORBIDDEN, WindmillAuthorizationError),
+        (HTTPStatus.NOT_FOUND, WindmillNotFoundError),
+        (HTTPStatus.INTERNAL_SERVER_ERROR, WindmillServerError),
+    ],
+)
+async def test_execution_status_mapping(
+    hass: HomeAssistant,
+    aioclient_mock: object,
+    status: HTTPStatus,
+    exception_type: type[Exception],
+) -> None:
+    """Execution keeps authentication, permission, missing and server failures distinct."""
+    aioclient_mock.post(RUN_SCRIPT_URL, status=status)  # type: ignore[attr-defined]
+    client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
+
+    with pytest.raises(exception_type):
+        await client.async_run_runnable(RunnableKind.SCRIPT, "u/automation/lights", {})
+
+
+async def test_execution_rejects_unsafe_paths(hass: HomeAssistant) -> None:
+    """An unsafe path never reaches the network layer."""
+    client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
+
+    with pytest.raises(WindmillRequestError):
+        await client.async_run_runnable(RunnableKind.SCRIPT, "u/../admin", {})

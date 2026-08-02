@@ -45,6 +45,7 @@ from custom_components.windmill.const import (
     OPT_DETAILED_HEALTH,
     OPT_INSTANCE_HEALTH,
     OPT_RUN_OBSERVATION,
+    OPT_RUNNABLE_BUTTONS,
     OPT_UPDATE_ENTITY,
     OPT_WORKER_DETAILS,
     OPT_WORKER_GROUPS,
@@ -122,6 +123,7 @@ ALL_FEATURES_OFF = {
     OPT_WORKER_DETAILS: False,
     OPT_RUN_OBSERVATION: False,
     OPT_UPDATE_ENTITY: False,
+    OPT_RUNNABLE_BUTTONS: False,
 }
 
 
@@ -252,6 +254,7 @@ async def test_guided_onboarding_creates_entry(
             OPT_WORKER_DETAILS: False,
             OPT_RUN_OBSERVATION: True,
             OPT_UPDATE_ENTITY: False,
+            OPT_RUNNABLE_BUTTONS: False,
         }
 
         result = await hass.config_entries.flow.async_configure(
@@ -263,6 +266,7 @@ async def test_guided_onboarding_creates_entry(
                 OPT_WORKER_DETAILS: False,
                 OPT_RUN_OBSERVATION: True,
                 OPT_UPDATE_ENTITY: False,
+                OPT_RUNNABLE_BUTTONS: False,
             },
         )
         await hass.async_block_till_done()
@@ -277,6 +281,7 @@ async def test_guided_onboarding_creates_entry(
         OPT_WORKER_DETAILS: False,
         OPT_RUN_OBSERVATION: True,
         OPT_UPDATE_ENTITY: False,
+        OPT_RUNNABLE_BUTTONS: False,
     }
     assert TOKEN not in caplog.text
 
@@ -502,6 +507,7 @@ async def _add_loaded_entry(hass: HomeAssistant) -> MockConfigEntry:
             OPT_WORKER_DETAILS: False,
             OPT_RUN_OBSERVATION: True,
             OPT_UPDATE_ENTITY: False,
+            OPT_RUNNABLE_BUTTONS: False,
         },
     )
     entry.add_to_hass(hass)
@@ -699,6 +705,7 @@ async def test_options_flow_updates_features_and_reloads(hass: HomeAssistant) ->
                 OPT_WORKER_DETAILS: True,
                 OPT_RUN_OBSERVATION: False,
                 OPT_UPDATE_ENTITY: False,
+                OPT_RUNNABLE_BUTTONS: False,
             },
         )
         await hass.async_block_till_done()
@@ -711,6 +718,7 @@ async def test_options_flow_updates_features_and_reloads(hass: HomeAssistant) ->
         OPT_WORKER_DETAILS: True,
         OPT_RUN_OBSERVATION: False,
         OPT_UPDATE_ENTITY: False,
+        OPT_RUNNABLE_BUTTONS: False,
     }
     assert entry.data == ENTRY_DATA
     assert entry.state is config_entries.ConfigEntryState.LOADED
@@ -743,4 +751,5 @@ async def test_options_flow_defaults_for_legacy_entry(hass: HomeAssistant) -> No
         OPT_WORKER_DETAILS: False,
         OPT_RUN_OBSERVATION: True,
         OPT_UPDATE_ENTITY: False,
+        OPT_RUNNABLE_BUTTONS: False,
     }
