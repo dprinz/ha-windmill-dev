@@ -1,7 +1,7 @@
 # Agent handoff after WMHA-0011
 
 - Handoff date: 2026-08-02
-- Repository state: `main` at the WMHA-0011 commit, pushed to `origin/main`
+- Repository state: `main` at `2ade4a2`, pushed to `origin/main`
 - Next ticket: `WMHA-0012` (still in `tickets/backlog/`; not activated)
 - Last completed ticket: `WMHA-0011`
 - Supersedes: `docs/development/handoff-after-WMHA-0003.md`
@@ -32,7 +32,7 @@ There is intentionally no active ticket. Activate WMHA-0012 according to `AGENTS
 | WMHA-0008 | `e9b4117` | Explicit runnable discovery and selection |
 | WMHA-0009 | `31ab879` | `windmill.run` action and opt-in runnable buttons |
 | WMHA-0010 | `283be2e` | Bounded started-job registry and `windmill.cancel` action |
-| WMHA-0011 | see `git log` | Read-only update entity for eligible self-hosted deployments |
+| WMHA-0011 | `2ade4a2` | Read-only update entity for eligible self-hosted deployments |
 
 The full suite is 346 tests at 96.95% coverage. Ruff, formatting, mypy, `uv lock --check`,
 `scripts/validate_repository.py` and `git diff --check` pass.
