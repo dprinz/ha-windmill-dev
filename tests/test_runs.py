@@ -8,11 +8,15 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import EVENT_STATE_CHANGED, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
-from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_capture_events,
+    async_fire_time_changed,
+)
 
 from custom_components.windmill.api import (
     JobState,
@@ -168,6 +172,30 @@ async def test_new_completions_fire_one_event_each(hass: HomeAssistant) -> None:
     await _refresh(hass, jobs=(*INITIAL_JOBS, CANCELED_JOB), minutes=4)
 
     assert hass.states.get("event.home_assistant_run").state == fired_at
+
+
+async def test_several_completions_in_one_poll_each_fire(hass: HomeAssistant) -> None:
+    """One poll observing several new completions publishes each of them, oldest first."""
+    await _setup_entry(hass, jobs=(RUNNING_JOB,))
+    changes = async_capture_events(hass, EVENT_STATE_CHANGED)
+
+    await _refresh(hass, jobs=(RUNNING_JOB, CANCELED_JOB, FAILURE_JOB, SUCCESS_JOB))
+
+    published = [
+        (
+            change.data["new_state"].attributes["event_type"],
+            change.data["new_state"].attributes["job_id"],
+            change.data["new_state"].attributes["path"],
+            change.data["new_state"].attributes["duration_ms"],
+        )
+        for change in changes
+        if change.data["entity_id"] == "event.home_assistant_run"
+    ]
+    assert published == [
+        ("success", SUCCESS_JOB.id, "u/automation/lights", 1500),
+        ("failure", FAILURE_JOB.id, "u/automation/lights", 1500),
+        ("canceled", CANCELED_JOB.id, "u/automation/lights", 1500),
+    ]
 
 
 async def test_duplicate_events_are_prevented_across_reloads(hass: HomeAssistant) -> None:

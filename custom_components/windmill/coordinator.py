@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import deque
 from collections.abc import Mapping
@@ -563,28 +564,35 @@ class StartedJobRegistry:
         """Initialize an empty registry backed by one config-entry store."""
         self._store = store
         self._jobs: dict[str, TrackedJob] = {}
+        # Every mutation is followed by a write of the whole registry, so concurrent callers
+        # must be serialized to keep the stored registry consistent with this one.
+        self._lock = asyncio.Lock()
 
     async def async_load(self) -> None:
         """Restore the registry, discarding unreadable or expired entries."""
-        data = await self._store.async_load()
-        rows = data.get("jobs") if isinstance(data, dict) else None
-        if isinstance(rows, list):
-            for row in rows[-MAX_TRACKED_JOBS:]:
-                job = TrackedJob.from_dict(row)
-                if job is not None:
-                    self._jobs[job.job_id] = job
-        self._prune()
+        async with self._lock:
+            data = await self._store.async_load()
+            rows = data.get("jobs") if isinstance(data, dict) else None
+            if isinstance(rows, list):
+                for row in rows[-MAX_TRACKED_JOBS:]:
+                    job = TrackedJob.from_dict(row)
+                    if job is not None:
+                        self._jobs[job.job_id] = job
+            self._prune()
 
     async def async_track(self, job: TrackedJob) -> None:
         """Record one started job and persist the bounded registry."""
-        self._jobs[job.job_id] = job
-        self._prune()
-        await self._async_save()
-
-    async def async_forget(self, job_id: str) -> None:
-        """Drop one completed job from the registry."""
-        if self._jobs.pop(job_id, None) is not None:
+        async with self._lock:
+            self._jobs[job.job_id] = job
+            self._prune()
             await self._async_save()
+
+    async def async_forget(self, *job_ids: str) -> None:
+        """Drop completed jobs from the registry in one bounded write."""
+        async with self._lock:
+            dropped = [job_id for job_id in job_ids if self._jobs.pop(job_id, None) is not None]
+            if dropped:
+                await self._async_save()
 
     def get(self, job_id: str) -> TrackedJob | None:
         """Return one tracked job, if Home Assistant started it."""

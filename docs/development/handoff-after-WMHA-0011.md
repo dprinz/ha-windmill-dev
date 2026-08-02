@@ -5,6 +5,8 @@
 - Next ticket: `WMHA-0018` (in `tickets/ready/`; activated 2026-08-02 by the independent review)
 - Last completed ticket: `WMHA-0011`
 - Supersedes: `docs/development/handoff-after-WMHA-0003.md`
+- Superseded by: `docs/development/handoff-after-WMHA-0018.md`; the architecture, invariants and
+  open gates below still apply, but WMHA-0018 is no longer the next ticket
 
 ## Start here
 

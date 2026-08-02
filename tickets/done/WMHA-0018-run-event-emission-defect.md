@@ -1,7 +1,7 @@
 ---
 id: WMHA-0018
 title: Emit one Home Assistant event per observed completion
-status: ready
+status: done
 type: quality
 priority: high
 risk: medium
@@ -68,16 +68,16 @@ concurrently and an unload can destroy a pending task.
 
 ## Acceptance criteria
 
-- [ ] A poll observing several new completions produces one state change per completion, each with
+- [x] A poll observing several new completions produces one state change per completion, each with
       its own `event_type`, `job_id`, `path` and `duration_ms`.
-- [ ] A regression test covers at least two new completions in a single refresh and fails against
+- [x] A regression test covers at least two new completions in a single refresh and fails against
       the current implementation.
-- [ ] Completions are published in ascending completion order.
-- [ ] Historical replay, cross-reload deduplication and the empty-first-poll behavior remain
+- [x] Completions are published in ascending completion order.
+- [x] Historical replay, cross-reload deduplication and the empty-first-poll behavior remain
       covered and unchanged.
-- [ ] Forgetting a completed tracked job cannot be destroyed by an entry unload and cannot
+- [x] Forgetting a completed tracked job cannot be destroyed by an entry unload and cannot
       interleave two writes to the same store.
-- [ ] No argument, log, stack trace or result payload enters the event attributes.
+- [x] No argument, log, stack trace or result payload enters the event attributes.
 
 ## Non-goals
 
@@ -99,25 +99,42 @@ concurrently and an unload can destroy a pending task.
 
 ## Validation evidence
 
-Fill during implementation; do not pre-check.
-
 | Check | Command or inspection | Result |
 | --- | --- | --- |
-| Repository guardrails | `python scripts/validate_repository.py` | not run |
-| Run and lifecycle tests | `uv run pytest -q tests/test_runs.py tests/test_lifecycle.py` | not run |
-| Full suite and coverage | `uv run pytest -q --cov=custom_components.windmill --cov-report=term-missing --cov-fail-under=95` | not run |
-| Lint, format and types | `uv run ruff check custom_components tests`; `uv run ruff format --check custom_components tests`; `uv run mypy custom_components/windmill` | not run |
+| Defect reproduced first | `uv run pytest -q tests/test_runs.py::test_several_completions_in_one_poll_each_fire` | failed against the unchanged implementation; only the newest completion (`canceled`) was published |
+| Repository guardrails | `python scripts/validate_repository.py` | passed; 22 tickets checked |
+| Run and lifecycle tests | `uv run pytest -q tests/test_runs.py tests/test_lifecycle.py` | 26 passed |
+| Full suite and coverage | `uv run pytest -q --cov=custom_components.windmill --cov-report=term-missing --cov-fail-under=95` | 349 passed; 97.01%; `event.py` at 100% including branches |
+| Lint, format and types | `uv run ruff check custom_components tests`; `uv run ruff format --check custom_components tests`; `uv run mypy custom_components/windmill` | passed; 14 source files checked |
+| Lock and diff | `uv lock --check`; `git diff --check` | passed |
+| Entry-owned task semantics | inspection of `homeassistant/config_entries.py:1378` and `_async_process_on_unload` | non-background entry tasks are awaited on unload; only background tasks are cancelled |
 
 ## Review evidence
 
-- Reviewer/session: not started
-- Findings: not started
-- Resolution: not started
+- Reviewer/session: separate review pass in the implementing session on 2026-08-02. No independent
+  agent or fresh session reviewed this medium-risk change, which deviates from `AGENTS.md` in the
+  same way WMHA-0004 through WMHA-0011 record.
+- Findings: one adjacent defect, reproduced with a throw-away test. A failed refresh also notifies
+  the coordinator listeners, and `coordinator.data` then still holds the previous snapshot, so the
+  completions of the last successful poll are triggered a second time. Confirmed: a `canceled`
+  completion published at `…:42.660+00:00` reappeared at `…:42.661+00:00` after one rate-limited
+  poll. The defect predates this ticket and is independent of the change made here.
+- Resolution: not fixed here. It is outside these acceptance criteria and would have widened a
+  quality ticket into a second behavior change, so it became `WMHA-0022` with the reproduction
+  recorded. The throw-away test was deleted; no probe code is left in the suite.
 
 ## Residual risks and follow-up
 
 - Automations that already compensate for the collapsed behavior may fire more often after the fix.
   This is the intended correction and belongs in the release notes.
+- Two completions published inside the same millisecond share the entity's `state` string, because
+  `EventEntity._trigger_event` owns the timestamp and is `@final`. The attributes always differ by
+  `job_id`, so the state machine never drops the write
+  (`homeassistant/core.py:2414` skips only when state *and* attributes are unchanged) and the
+  standard state trigger matches on attribute changes as well
+  (`homeassistant/components/homeassistant/triggers/state.py:124`). An automation that pins `to:`
+  or `from:` would not see the second one; that configuration is meaningless for event entities.
+- `WMHA-0022` carries the republication defect found during review.
 
 ## Blog notes
 

@@ -1,10 +1,12 @@
 """Tests for the bounded registry of Home Assistant-started Windmill jobs."""
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.util import dt as dt_util
@@ -153,6 +155,105 @@ async def test_registry_survives_reload_without_duplicate_events(hass: HomeAssis
     assert first.attributes["job_id"] == JOB_ID
     assert hass.states.get("event.home_assistant_run").state == first.state
     assert entry.runtime_data.started_jobs.get(JOB_ID) is None
+
+
+async def test_completions_of_one_poll_are_forgotten_by_one_entry_task(
+    hass: HomeAssistant,
+) -> None:
+    """Tracked completions of one poll are forgotten by a single config-entry-owned task."""
+    with patch(
+        "custom_components.windmill.api.WindmillClient.async_list_jobs",
+        new=AsyncMock(return_value=()),
+    ):
+        entry = await _setup_entry(
+            hass,
+            options={OPT_RUNNABLES: [LIGHTS_SELECTION], OPT_RUN_OBSERVATION: True},
+        )
+        await _start_job(hass, entry)
+        await _start_job(hass, entry, OTHER_JOB_ID)
+
+    completions = tuple(
+        WindmillJob(
+            id=job_id,
+            state=JobState.SUCCESS,
+            kind="script",
+            path="u/automation/lights",
+            created_at=dt_util.utcnow(),
+            completed_at=dt_util.utcnow() + timedelta(seconds=offset),
+            duration_ms=1200,
+        )
+        for offset, job_id in enumerate((JOB_ID, OTHER_JOB_ID))
+    )
+    created: list[str] = []
+    original = ConfigEntry.async_create_task
+
+    def _record(
+        self: ConfigEntry[Any],
+        target_hass: HomeAssistant,
+        target: Any,
+        name: str | None = None,
+        eager_start: bool = True,
+    ) -> Any:
+        """Record every task the config entry owns."""
+        created.append(str(name))
+        return original(self, target_hass, target, name, eager_start)
+
+    with (
+        patched_client(),
+        patch(
+            "custom_components.windmill.api.WindmillClient.async_list_jobs",
+            new=AsyncMock(return_value=completions),
+        ),
+        patch.object(ConfigEntry, "async_create_task", _record),
+    ):
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=2))
+        await hass.async_block_till_done()
+
+    assert created.count("forget completed jobs") == 1
+    assert entry.runtime_data.started_jobs.tracked == ()
+
+
+async def test_registry_writes_are_serialized_and_batched() -> None:
+    """Concurrent registry callers never interleave, and one forget is one write."""
+    saved: list[Any] = []
+    writing = False
+
+    class _Store:
+        async def async_load(self) -> Any:
+            return None
+
+        async def async_save(self, data: Any) -> None:
+            nonlocal writing
+            assert not writing
+            writing = True
+            await asyncio.sleep(0)
+            saved.append(data)
+            writing = False
+
+    registry = StartedJobRegistry(_Store())  # type: ignore[arg-type]
+    await registry.async_load()
+    for index in range(3):
+        await registry.async_track(
+            TrackedJob(
+                job_id=f"job-{index}",
+                kind="script",
+                path="u/a/b",
+                started_at=dt_util.utcnow(),
+            )
+        )
+    saved.clear()
+
+    await asyncio.gather(
+        registry.async_forget("job-0", "job-1"),
+        registry.async_track(
+            TrackedJob(job_id="job-3", kind="script", path="u/a/b", started_at=dt_util.utcnow())
+        ),
+        registry.async_forget("never-tracked"),
+    )
+
+    assert len(saved) == 2
+    assert [row["job_id"] for row in saved[-1]["jobs"]] == ["job-2", "job-3"]
+    assert {job.job_id for job in registry.tracked} == {"job-2", "job-3"}
 
 
 async def test_registry_is_bounded_by_size_and_age() -> None:

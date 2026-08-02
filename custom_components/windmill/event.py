@@ -36,6 +36,7 @@ class WindmillRunEventEntity(WindmillRunEntity, EventEntity):
     def _handle_coordinator_update(self) -> None:
         """Publish every completion the coordinator observed for the first time."""
         registry = self.runtime.started_jobs
+        completed: list[str] = []
         for event in self.coordinator.data.new_events:
             tracked = None if registry is None else registry.get(event.job_id)
             self._trigger_event(
@@ -48,6 +49,18 @@ class WindmillRunEventEntity(WindmillRunEntity, EventEntity):
                     "started_by_home_assistant": tracked is not None,
                 },
             )
-            if tracked is not None and registry is not None:
-                self.hass.async_create_task(registry.async_forget(event.job_id))
+            # A triggered event only becomes observable through a state write, so a poll that
+            # observes several completions needs one write per completion.
+            self.async_write_ha_state()
+            if tracked is not None:
+                completed.append(event.job_id)
+        entry = self.coordinator.config_entry
+        if completed and registry is not None and entry is not None:
+            # One entry-owned task per poll: an unload waits for it, and the registry writes
+            # of one poll cannot interleave with each other.
+            entry.async_create_task(
+                self.hass,
+                registry.async_forget(*completed),
+                name="forget completed jobs",
+            )
         super()._handle_coordinator_update()
