@@ -46,7 +46,10 @@ from custom_components.windmill.const import (
     OPT_DETAILED_HEALTH,
     OPT_INSTANCE_HEALTH,
 )
-from custom_components.windmill.coordinator import HEALTH_UPDATE_INTERVAL
+from custom_components.windmill.coordinator import (
+    CAPABILITY_UPDATE_INTERVAL,
+    HEALTH_UPDATE_INTERVAL,
+)
 
 BASE_URL = "https://windmill.example"
 WORKSPACE = "home-assistant"
@@ -380,6 +383,18 @@ async def test_rate_limit_backoff_is_bounded(hass: HomeAssistant) -> None:
         await hass.async_block_till_done()
 
     assert coordinator.update_interval == timedelta(seconds=MAX_RATE_LIMIT_BACKOFF_SECONDS)
+
+
+async def test_rate_limit_never_polls_faster_than_the_base_interval(hass: HomeAssistant) -> None:
+    """A 429 must not shorten an interval that is already longer than the backoff cap."""
+    entry = await _setup_entry(hass)
+    coordinator = entry.runtime_data.capability_coordinator
+
+    with patched_client(capabilities=WindmillRateLimitError(retry_after=600.0)):
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(hours=7))
+        await hass.async_block_till_done()
+
+    assert coordinator.update_interval == CAPABILITY_UPDATE_INTERVAL
 
 
 async def test_repeated_failures_are_logged_once(

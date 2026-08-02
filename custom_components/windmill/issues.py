@@ -102,10 +102,11 @@ def _async_worker_drift_issue(
 ) -> None:
     """Report worker groups that have been running several versions for long enough."""
     coordinator = runtime.worker_coordinator
-    observed: dict[str, int] = {}
-    if coordinator is not None and coordinator.last_update_success:
-        # A failed poll carries the previous snapshot, which is not evidence of current drift.
-        observed = {group: state.versions for group, state in coordinator.data.groups.items()}
+    if coordinator is None or not coordinator.last_update_success:
+        # A failed poll carries the previous snapshot: drift is unknown, not resolved, so
+        # neither the issues nor their grace timers may change.
+        return
+    observed = {group: state.versions for group, state in coordinator.data.groups.items()}
     now = dt_util.utcnow()
     for group in set(drift_since) | set(observed):
         issue_id = f"{entry_id}_worker_versions_{group}"

@@ -125,7 +125,9 @@ class WindmillCoordinator[DataT](DataUpdateCoordinator[DataT]):
             return
         requested = cause.retry_after or DEFAULT_RATE_LIMIT_BACKOFF_SECONDS
         base = 0.0 if self._base_interval is None else self._base_interval.total_seconds()
-        seconds = min(max(requested, base), MAX_RATE_LIMIT_BACKOFF_SECONDS)
+        # The cap applies to the requested backoff, never to the base interval: a coordinator
+        # that already polls slower than the cap must not speed up after a 429.
+        seconds = max(base, min(requested, MAX_RATE_LIMIT_BACKOFF_SECONDS))
         backoff = timedelta(seconds=seconds)
         if self.update_interval != backoff:
             _LOGGER.debug("Windmill rate limited %s; polling every %s", self.name, backoff)

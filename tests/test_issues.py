@@ -196,3 +196,50 @@ async def test_failed_worker_poll_does_not_report_drift(
         await hass.async_block_till_done()
 
     assert _issues(hass) == {}
+
+
+async def test_failed_worker_poll_keeps_an_existing_drift_issue(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """A failed poll is "unknown", not "resolved"; only a successful poll clears the issue."""
+    await _setup_worker_entry(hass, workers=DRIFTED)
+
+    with patched_worker_client(workers=DRIFTED):
+        freezer.tick(timedelta(minutes=WORKER_DRIFT_GRACE_MINUTES + 1))
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=3))
+        await hass.async_block_till_done()
+
+    assert "worker_versions_default" in _issues(hass)
+
+    with patched_worker_client(workers=WindmillConnectionError()):
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=6))
+        await hass.async_block_till_done()
+
+    assert "worker_versions_default" in _issues(hass)
+
+    with patched_worker_client(workers=WORKERS):
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=9))
+        await hass.async_block_till_done()
+
+    assert _issues(hass) == {}
+
+
+async def test_failed_worker_poll_does_not_restart_the_drift_grace_timer(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """A failed poll during the grace period must not restart the drift observation."""
+    await _setup_worker_entry(hass, workers=DRIFTED)
+
+    with patched_worker_client(workers=WindmillConnectionError()):
+        freezer.tick(timedelta(minutes=WORKER_DRIFT_GRACE_MINUTES - 10))
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=3))
+        await hass.async_block_till_done()
+
+    assert _issues(hass) == {}
+
+    with patched_worker_client(workers=DRIFTED):
+        freezer.tick(timedelta(minutes=11))
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=6))
+        await hass.async_block_till_done()
+
+    assert "worker_versions_default" in _issues(hass)
