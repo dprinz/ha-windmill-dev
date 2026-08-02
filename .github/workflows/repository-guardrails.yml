@@ -18,6 +18,10 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          # Resolved from the repository pin so no second place can drift away
+          # from pyproject.toml. The script itself is standard-library only and
+          # would run on any interpreter; naming an unsupported version here
+          # would still suggest that one is fine (AGENTS.md, WMHA-0033).
+          python-version-file: .python-version
       - name: Validate repository structure
         run: python scripts/validate_repository.py
