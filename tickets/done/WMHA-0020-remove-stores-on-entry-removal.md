@@ -1,7 +1,7 @@
 ---
 id: WMHA-0020
 title: Delete persisted stores when a config entry is removed
-status: backlog
+status: done
 type: quality
 priority: medium
 risk: low
@@ -63,11 +63,11 @@ Home Assistant does not clean up `Store` files on entry removal; the integration
 
 ## Acceptance criteria
 
-- [ ] After removing a config entry, loading either store returns no data.
-- [ ] A reload or unload leaves both stores intact, and deduplication across reloads still holds.
-- [ ] Removing an entry whose stores were never written completes without error.
-- [ ] Removing one entry does not touch the stores of another configured entry.
-- [ ] A regression test covers entry removal and fails against the current implementation.
+- [x] After removing a config entry, loading either store returns no data.
+- [x] A reload or unload leaves both stores intact, and deduplication across reloads still holds.
+- [x] Removing an entry whose stores were never written completes without error.
+- [x] Removing one entry does not touch the stores of another configured entry.
+- [x] A regression test covers entry removal and fails against the current implementation.
 
 ## Non-goals
 
@@ -84,30 +84,35 @@ Home Assistant does not clean up `Store` files on entry removal; the integration
 
 | Item | Classification | Validation |
 | --- | --- | --- |
-| `Store.async_remove` is the supported deletion path and tolerates a missing file | assumption | Verify against the pinned Home Assistant version during implementation |
+| `Store.async_remove` is the supported deletion path and tolerates a missing file | confirmed | `homeassistant/helpers/storage.py` in the pinned version unlinks under `suppress(FileNotFoundError)` after invalidating the manager entry and cancelling both write listeners |
 
 ## Validation evidence
 
-Fill during implementation; do not pre-check.
-
 | Check | Command or inspection | Result |
 | --- | --- | --- |
-| Repository guardrails | `python scripts/validate_repository.py` | not run |
-| Init, run and lifecycle tests | `uv run pytest -q tests/test_init.py tests/test_runs.py tests/test_lifecycle.py` | not run |
-| Full suite and coverage | `uv run pytest -q --cov=custom_components.windmill --cov-report=term-missing --cov-fail-under=95` | not run |
-| Lint, format and types | `uv run ruff check custom_components tests`; `uv run ruff format --check custom_components tests`; `uv run mypy custom_components/windmill` | not run |
+| Repository guardrails | `python scripts/validate_repository.py` | passed (22 tickets checked) |
+| Init, run and lifecycle tests | `uv run pytest -q tests/test_init.py tests/test_runs.py tests/test_lifecycle.py` | passed |
+| Regression check | Same files with `async_remove_entry` renamed so Home Assistant cannot find it | failed as required: `test_entry_removal_deletes_only_its_own_stores` |
+| Full suite and coverage | `uv run pytest -q --cov=custom_components.windmill --cov-report=term-missing --cov-fail-under=95` | passed, 355 tests, 97.04%; `__init__.py` at 100% |
+| Lint, format and types | `uv run ruff check custom_components tests`; `uv run ruff format --check custom_components tests`; `uv run mypy custom_components/windmill` | passed |
+| Lock and whitespace | `uv lock --check`; `git diff --check` | passed |
 
 ## Review evidence
 
-- Reviewer/session: not started
-- Findings: not started
-- Resolution: not started
+- Reviewer/session: separate review pass inside the implementing session; the same deviation from
+  the independent-reviewer rule as `WMHA-0018` and `WMHA-0019` applies and is recorded here.
+- Findings: three checks were made. Home Assistant really dispatches `async_remove_entry` from the
+  component module — proven by the regression run, where renaming it made the removal test fail.
+  Deduplication across reloads is untouched, since `test_duplicate_events_are_prevented_across_reloads`
+  still passes with the store factories in place. `Store.async_remove` can still raise a non-missing
+  `OSError`, which the failing-remove test now exercises, so removal completes even then.
+- Resolution: no change required.
 
 ## Residual risks and follow-up
 
-- Stores orphaned by earlier add-and-remove cycles are not cleaned retroactively. Decide during
-  implementation whether that is acceptable or needs a note in the user documentation of
-  `WMHA-0013`.
+- Stores orphaned by add-and-remove cycles before this change are not cleaned retroactively. A
+  retroactive sweep would have to guess which `windmill.*` store files belong to entries that no
+  longer exist, so the decision is to document it instead; the requirement was added to `WMHA-0013`.
 
 ## Blog notes
 

@@ -1,6 +1,7 @@
-"""Tests for Windmill config-entry setup, unload and reload."""
+"""Tests for Windmill config-entry setup, unload, reload and removal."""
 
 from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -36,8 +37,12 @@ from custom_components.windmill.const import (
     CONF_TOKEN,
     CONF_WORKSPACE,
     DOMAIN,
+    OPT_RUN_OBSERVATION,
+    OPT_RUNNABLES,
 )
 from custom_components.windmill.coordinator import WindmillCapabilityCoordinator
+from tests.test_lifecycle import _start_job
+from tests.test_runnables import LIGHTS_SELECTION, _setup_entry, patched_client
 
 ENTRY_DATA = {
     CONF_BASE_URL: "https://windmill.example",
@@ -151,6 +156,91 @@ async def test_setup_unload_and_reload(hass: HomeAssistant) -> None:
         assert entry.state is ConfigEntryState.NOT_LOADED
         assert not hasattr(entry, "runtime_data")
         assert len(shutdowns) == 2
+
+
+async def _setup_observing_entry(hass: HomeAssistant) -> MockConfigEntry:
+    """Set up one entry that writes both per-entry stores."""
+    with patch(
+        "custom_components.windmill.api.WindmillClient.async_list_jobs",
+        new=AsyncMock(return_value=()),
+    ):
+        entry = await _setup_entry(
+            hass, options={OPT_RUNNABLES: [LIGHTS_SELECTION], OPT_RUN_OBSERVATION: True}
+        )
+        await _start_job(hass, entry)
+    return entry
+
+
+def _store_keys(entry: MockConfigEntry) -> tuple[str, str]:
+    """Return the storage keys of one config entry."""
+    return (f"{DOMAIN}.runs.{entry.entry_id}", f"{DOMAIN}.jobs.{entry.entry_id}")
+
+
+async def test_entry_removal_deletes_only_its_own_stores(
+    hass: HomeAssistant, hass_storage: dict[str, Any]
+) -> None:
+    """Removing an entry deletes the data it persisted and leaves other entries alone."""
+    entry = await _setup_observing_entry(hass)
+    other = await _setup_observing_entry(hass)
+    removed_keys = _store_keys(entry)
+    kept_keys = _store_keys(other)
+
+    assert all(key in hass_storage for key in removed_keys + kept_keys)
+
+    await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert not any(key in hass_storage for key in removed_keys)
+    assert all(key in hass_storage for key in kept_keys)
+
+
+async def test_unload_and_reload_keep_persisted_stores(
+    hass: HomeAssistant, hass_storage: dict[str, Any]
+) -> None:
+    """Only removal deletes stored state; unload and reload must preserve it."""
+    entry = await _setup_observing_entry(hass)
+    run_key, job_key = _store_keys(entry)
+    stored_jobs = hass_storage[job_key]["data"]["jobs"]
+
+    with (
+        patched_client(),
+        patch(
+            "custom_components.windmill.api.WindmillClient.async_list_jobs",
+            new=AsyncMock(return_value=()),
+        ),
+    ):
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.NOT_LOADED
+    assert hass_storage[run_key]["data"]
+    assert hass_storage[job_key]["data"]["jobs"] == stored_jobs
+
+
+async def test_removal_without_stored_data_completes(
+    hass: HomeAssistant, hass_storage: dict[str, Any]
+) -> None:
+    """An entry that never wrote a store is removable, and a failing delete cannot block removal."""
+    entry = await _setup_entry(hass)
+
+    assert not any(key in hass_storage for key in _store_keys(entry))
+
+    await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert not hass.config_entries.async_entries(DOMAIN)
+
+    failing = await _setup_observing_entry(hass)
+    with patch(
+        "homeassistant.helpers.storage.Store.async_remove",
+        new=AsyncMock(side_effect=OSError("read-only file system")),
+    ):
+        await hass.config_entries.async_remove(failing.entry_id)
+        await hass.async_block_till_done()
+
+    assert not hass.config_entries.async_entries(DOMAIN)
 
 
 @pytest.mark.parametrize(

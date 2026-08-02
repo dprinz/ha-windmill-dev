@@ -10,7 +10,6 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.storage import Store
 
 from .api import (
     CapabilityAvailability,
@@ -32,7 +31,6 @@ from .const import (
     CONF_BASE_URL,
     CONF_TOKEN,
     CONF_WORKSPACE,
-    DOMAIN,
     FEATURE_DEFAULTS,
     OPT_DETAILED_HEALTH,
     OPT_INSTANCE_HEALTH,
@@ -43,8 +41,7 @@ from .const import (
     OPT_WORKER_GROUPS,
 )
 from .coordinator import (
-    JOB_STORAGE_VERSION,
-    RUN_STORAGE_VERSION,
+    ENTRY_STORES,
     RunObservationState,
     StartedJobRegistry,
     WindmillCapabilityCoordinator,
@@ -53,6 +50,8 @@ from .coordinator import (
     WindmillRunnableCoordinator,
     WindmillUpdateCoordinator,
     WindmillWorkerCoordinator,
+    async_job_store,
+    async_run_store,
     load_selections,
 )
 from .models import WindmillRuntimeData
@@ -132,9 +131,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WindmillConfigEntry) -> 
 
     run_coordinator: WindmillRunCoordinator | None = None
     if _feature_enabled(entry, OPT_RUN_OBSERVATION) and _supported(capabilities.runs):
-        store: Store[dict[str, Any]] = Store(
-            hass, RUN_STORAGE_VERSION, f"{DOMAIN}.runs.{entry.entry_id}"
-        )
+        store = async_run_store(hass, entry.entry_id)
         run_coordinator = WindmillRunCoordinator(
             hass,
             entry,
@@ -162,10 +159,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WindmillConfigEntry) -> 
         # The upstream check depends on GitHub, so a failure must not fail setup.
         await update_coordinator.async_refresh()
 
-    job_store: Store[dict[str, Any]] = Store(
-        hass, JOB_STORAGE_VERSION, f"{DOMAIN}.jobs.{entry.entry_id}"
-    )
-    started_jobs = StartedJobRegistry(job_store)
+    started_jobs = StartedJobRegistry(async_job_store(hass, entry.entry_id))
     await started_jobs.async_load()
 
     entry.runtime_data = WindmillRuntimeData(
@@ -186,6 +180,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: WindmillConfigEntry) -> 
 async def async_unload_entry(hass: HomeAssistant, entry: WindmillConfigEntry) -> bool:
     """Unload platforms; config-entry callbacks stop the shared coordinators."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: WindmillConfigEntry) -> None:
+    """Delete everything this config entry persisted.
+
+    Home Assistant does not clean up `Store` files, so an unremoved entry would leave job
+    identifiers, runnable paths and timestamps behind. Removal must never raise, or Home Assistant
+    keeps the entry the user asked to delete.
+    """
+    for build_store in ENTRY_STORES:
+        try:
+            await build_store(hass, entry.entry_id).async_remove()
+        except OSError:
+            _LOGGER.warning(
+                "Could not delete stored Windmill data of the removed config entry; "
+                "the leftover file is only read by an entry with the same identifier"
+            )
 
 
 def _feature_enabled(entry: WindmillConfigEntry, option: str) -> bool:

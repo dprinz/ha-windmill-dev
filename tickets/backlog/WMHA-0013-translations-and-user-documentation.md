@@ -31,7 +31,8 @@ A public integration is not usable when capability limitations, permissions and 
 - English and German translations for all flows, errors, entities, actions and repairs.
 - Safe examples for execution and run events.
 - Permission matrix for basic and administrative features.
-- Removal and credential-revocation guidance.
+- Removal and credential-revocation guidance, including the note added by `WMHA-0020` that stores
+  orphaned by add-and-remove cycles before that change are not cleaned retroactively.
 
 ## Acceptance criteria
 

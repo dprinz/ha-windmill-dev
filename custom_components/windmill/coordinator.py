@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import deque
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
@@ -56,6 +56,23 @@ RUNNABLE_UPDATE_INTERVAL = timedelta(minutes=30)
 RUNNABLE_PAGE_SIZE = 100
 MAX_RUNNABLE_PAGES = 3
 UPDATE_CHECK_INTERVAL = timedelta(hours=6)
+
+
+def async_run_store(hass: HomeAssistant, entry_id: str) -> Store[dict[str, Any]]:
+    """Return the run-observation store of one config entry."""
+    return Store(hass, RUN_STORAGE_VERSION, f"{DOMAIN}.runs.{entry_id}")
+
+
+def async_job_store(hass: HomeAssistant, entry_id: str) -> Store[dict[str, Any]]:
+    """Return the started-job store of one config entry."""
+    return Store(hass, JOB_STORAGE_VERSION, f"{DOMAIN}.jobs.{entry_id}")
+
+
+# Every per-entry store is built through this tuple, so entry removal cannot forget one.
+ENTRY_STORES: tuple[Callable[[HomeAssistant, str], Store[dict[str, Any]]], ...] = (
+    async_run_store,
+    async_job_store,
+)
 
 
 @dataclass
