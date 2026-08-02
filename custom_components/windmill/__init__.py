@@ -63,15 +63,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WindmillConfigEntry) -> 
         connection=connection,
         capability_coordinator=capability_coordinator,
     )
-    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: WindmillConfigEntry) -> bool:
     """Unload after config-entry callbacks stop the shared capability coordinator."""
     return True
-
-
-async def _async_update_listener(hass: HomeAssistant, entry: WindmillConfigEntry) -> None:
-    """Reload the entry after supported config-entry updates."""
-    await hass.config_entries.async_reload(entry.entry_id)

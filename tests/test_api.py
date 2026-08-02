@@ -18,6 +18,8 @@ from custom_components.windmill.api import (
     WindmillConnectionError,
     WindmillEdition,
     WindmillHealthState,
+    WindmillInstanceClient,
+    WindmillNotFoundError,
     WindmillProtocolError,
     WindmillRateLimitError,
     WindmillRequestError,
@@ -25,6 +27,7 @@ from custom_components.windmill.api import (
     WindmillTimeoutError,
     WindmillUrlError,
     WindmillWorkspaceError,
+    WindmillWorkspaceInfo,
     normalize_base_url,
     normalize_workspace,
 )
@@ -35,6 +38,7 @@ WORKSPACE = "home-assistant"
 VERSION_URL = f"{BASE_URL}/api/version"
 HEALTH_URL = f"{BASE_URL}/api/health/status?force=false"
 WHOAMI_URL = f"{BASE_URL}/api/w/{WORKSPACE}/users/whoami"
+WORKSPACES_URL = f"{BASE_URL}/api/workspaces/list"
 TOKEN = "obviously-fake-test-token"
 JSON_HEADERS = {"Content-Type": "application/json"}
 TEXT_HEADERS = {"Content-Type": "text/plain"}
@@ -442,3 +446,76 @@ async def test_retry_after_is_bounded(
         await client.async_validate()
 
     assert caught.value.retry_after == 120
+
+
+async def test_workspace_listing_allowlists_bounded_fields(
+    hass: HomeAssistant, aioclient_mock: object
+) -> None:
+    """Workspace listing keeps only the bounded identifier and label."""
+    aioclient_mock.get(  # type: ignore[attr-defined]
+        WORKSPACES_URL,
+        json=[
+            {
+                "id": WORKSPACE,
+                "name": "Home Assistant",
+                "owner": "must-not-be-retained@example.invalid",
+            },
+            {"id": "admin"},
+        ],
+        headers=JSON_HEADERS,
+    )
+    client = WindmillInstanceClient(async_get_clientsession(hass), BASE_URL, TOKEN)
+
+    workspaces = await client.async_list_workspaces()
+
+    assert workspaces == (
+        WindmillWorkspaceInfo(id=WORKSPACE, name="Home Assistant"),
+        WindmillWorkspaceInfo(id="admin", name="admin"),
+    )
+    call = aioclient_mock.mock_calls[0]  # type: ignore[attr-defined]
+    assert call[3]["Authorization"] == f"Bearer {TOKEN}"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"id": WORKSPACE},
+        ["home-assistant"],
+        [{"id": ""}],
+        [{"id": WORKSPACE, "name": 42}],
+        [{"id": "x" * 257}],
+        [{"id": WORKSPACE}] * 201,
+    ],
+)
+async def test_workspace_listing_rejects_invalid_models(
+    hass: HomeAssistant, aioclient_mock: object, body: object
+) -> None:
+    """A malformed workspace list fails closed without retaining upstream data."""
+    aioclient_mock.get(WORKSPACES_URL, json=body, headers=JSON_HEADERS)  # type: ignore[attr-defined]
+    client = WindmillInstanceClient(async_get_clientsession(hass), BASE_URL, TOKEN)
+
+    with pytest.raises(WindmillProtocolError):
+        await client.async_list_workspaces()
+
+
+@pytest.mark.parametrize(
+    ("status", "exception_type"),
+    [
+        (HTTPStatus.UNAUTHORIZED, WindmillAuthenticationError),
+        (HTTPStatus.FORBIDDEN, WindmillAuthorizationError),
+        (HTTPStatus.NOT_FOUND, WindmillNotFoundError),
+        (HTTPStatus.SERVICE_UNAVAILABLE, WindmillServerError),
+    ],
+)
+async def test_workspace_listing_status_mapping(
+    hass: HomeAssistant,
+    aioclient_mock: object,
+    status: HTTPStatus,
+    exception_type: type[Exception],
+) -> None:
+    """Workspace listing keeps authentication, permission and server failures distinct."""
+    aioclient_mock.get(WORKSPACES_URL, status=status)  # type: ignore[attr-defined]
+    client = WindmillInstanceClient(async_get_clientsession(hass), BASE_URL, TOKEN)
+
+    with pytest.raises(exception_type):
+        await client.async_list_workspaces()

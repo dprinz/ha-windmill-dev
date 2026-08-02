@@ -9,3 +9,26 @@ CONF_WORKSPACE = "workspace"
 DEFAULT_CONNECT_TIMEOUT = 10.0
 DEFAULT_REQUEST_TIMEOUT = 30.0
 MAX_RESPONSE_BYTES = 65_536
+
+OPT_INSTANCE_HEALTH = "instance_health"
+OPT_DETAILED_HEALTH = "detailed_health"
+OPT_WORKER_DETAILS = "worker_details"
+OPT_RUN_OBSERVATION = "run_observation"
+OPT_UPDATE_ENTITY = "update_entity"
+
+FEATURE_OPTIONS = (
+    OPT_INSTANCE_HEALTH,
+    OPT_DETAILED_HEALTH,
+    OPT_WORKER_DETAILS,
+    OPT_RUN_OBSERVATION,
+    OPT_UPDATE_ENTITY,
+)
+
+# Administrative and high-cardinality features stay disabled until a user opts in.
+FEATURE_DEFAULTS = {
+    OPT_INSTANCE_HEALTH: True,
+    OPT_DETAILED_HEALTH: False,
+    OPT_WORKER_DETAILS: False,
+    OPT_RUN_OBSERVATION: True,
+    OPT_UPDATE_ENTITY: False,
+}

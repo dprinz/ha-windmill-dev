@@ -4,11 +4,63 @@
     "step": {
       "user": {
         "title": "Connect to Windmill",
-        "description": "Enter a Windmill instance, workspace, and token with users:read access.",
+        "description": "Enter the Windmill instance URL and a token with at least `users:read` access. The token is only ever sent in an authorization header.",
         "data": {
           "base_url": "Base URL",
-          "workspace": "Workspace ID",
           "token": "Token"
+        },
+        "data_description": {
+          "base_url": "For example https://app.windmill.dev or the URL of your self-hosted instance. HTTP is allowed only for loopback addresses.",
+          "token": "A least-privilege Windmill user token. Add `workspaces:read` if you want to pick the workspace from a list."
+        }
+      },
+      "workspace": {
+        "title": "Select a workspace",
+        "description": "Choose the workspace this entry should monitor. If your token cannot list workspaces, type the workspace ID manually.",
+        "data": {
+          "workspace": "Workspace"
+        },
+        "data_description": {
+          "workspace": "The workspace ID, not its display name."
+        }
+      },
+      "capabilities": {
+        "title": "Detected capabilities",
+        "description": "Connected to {server} as {username} in workspace {workspace}.\n\nDetected support:\n- Instance health: {health}\n- Detailed health: {detailed_health}\n- Workers: {workers}\n- Runs: {runs}\n- Script discovery: {script_discovery}\n- Flow discovery: {flow_discovery}\n- Update check: {update_visibility}\n\n`unauthorized` means the token lacks that permission and `unsupported` means this Windmill deployment does not offer the endpoint. Either way, only the affected feature is unavailable. Running scripts and flows is never verified during setup, because that would have to start a job."
+      },
+      "features": {
+        "title": "Select features",
+        "description": "Enable only what you need. Administrative and high-cardinality monitoring stays disabled unless you turn it on, and a feature whose capability is unavailable will simply create no entities.",
+        "data": {
+          "instance_health": "Instance health",
+          "detailed_health": "Detailed health diagnostics",
+          "worker_details": "Individual worker details",
+          "run_observation": "Job and run observation",
+          "update_entity": "Update availability"
+        },
+        "data_description": {
+          "detailed_health": "Administrative: needs a token that Windmill accepts on the detailed health endpoint.",
+          "worker_details": "High cardinality: creates entities per worker and is meant for self-hosted operators.",
+          "update_entity": "Self-hosted only. Managed Windmill Cloud deployments are updated by Windmill."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Update the Windmill token",
+        "description": "Enter a new token for workspace {workspace} on {base_url}. The instance and workspace of this entry stay unchanged.",
+        "data": {
+          "token": "Token"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure the Windmill connection",
+        "description": "Change the instance URL or workspace of this entry. Leave the token empty to keep the current one.",
+        "data": {
+          "base_url": "Base URL",
+          "workspace": "Workspace",
+          "token": "New token"
+        },
+        "data_description": {
+          "token": "Optional. The stored token is kept when this field stays empty."
         }
       }
     },
@@ -22,7 +74,29 @@
       "unexpected_response": "Windmill returned an unexpected response."
     },
     "abort": {
-      "already_configured": "This Windmill instance and workspace are already configured."
+      "already_configured": "This Windmill instance and workspace are already configured.",
+      "reauth_successful": "The Windmill token was updated.",
+      "reconfigure_successful": "The Windmill connection was updated."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Windmill features",
+        "description": "Enable only the features you need. Changes reload the integration.",
+        "data": {
+          "instance_health": "Instance health",
+          "detailed_health": "Detailed health diagnostics",
+          "worker_details": "Individual worker details",
+          "run_observation": "Job and run observation",
+          "update_entity": "Update availability"
+        },
+        "data_description": {
+          "detailed_health": "Administrative: needs a token that Windmill accepts on the detailed health endpoint.",
+          "worker_details": "High cardinality: creates entities per worker and is meant for self-hosted operators.",
+          "update_entity": "Self-hosted only. Managed Windmill Cloud deployments are updated by Windmill."
+        }
+      }
     }
   }
 }

@@ -121,6 +121,11 @@ async def test_setup_unload_and_reload(hass: HomeAssistant) -> None:
         )
         await hass.async_block_till_done()
         assert entry.state is ConfigEntryState.LOADED
+        assert not entry.update_listeners
+
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+        assert entry.state is ConfigEntryState.LOADED
         assert connect.await_count == 2
         assert discover.await_count == 2
 
