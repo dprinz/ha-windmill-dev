@@ -26,6 +26,7 @@ from custom_components.windmill.api import (
     WindmillServerError,
     WindmillTimeoutError,
     WindmillUrlError,
+    WindmillWorker,
     WindmillWorkspaceError,
     WindmillWorkspaceInfo,
     normalize_base_url,
@@ -630,3 +631,130 @@ async def test_detailed_health_status_mapping(
 
     with pytest.raises(exception_type):
         await client.async_get_detailed_health()
+
+
+WORKERS_URL = f"{BASE_URL}/api/workers/list?page=1&per_page=2&ping_since=300"
+WORKER_GROUPS_URL = f"{BASE_URL}/api/configs/list_worker_groups"
+WORKER_ROW = {
+    "worker": "wk-default-host1-abc",
+    "worker_instance": "host1",
+    "worker_group": "default",
+    "wm_version": "1.775.2",
+    "ip": "10.0.0.5",
+    "last_job_id": "00000000-0000-4000-8000-000000000001",
+    "last_job_workspace_id": "secret-workspace",
+    "custom_tags": ["deno"],
+    "jobs_executed": 42,
+}
+
+
+async def test_worker_listing_discards_sensitive_fields(
+    hass: HomeAssistant, aioclient_mock: object
+) -> None:
+    """Worker rows keep four bounded fields and drop every denylisted value."""
+    aioclient_mock.get(  # type: ignore[attr-defined]
+        WORKERS_URL,
+        json=[WORKER_ROW],
+        headers=JSON_HEADERS,
+    )
+    client = WindmillInstanceClient(async_get_clientsession(hass), BASE_URL, TOKEN)
+
+    workers = await client.async_list_workers(PageRequest(page=1, per_page=2))
+
+    assert workers == (
+        WindmillWorker(
+            name="wk-default-host1-abc",
+            instance="host1",
+            group="default",
+            version="1.775.2",
+        ),
+    )
+    assert "10.0.0.5" not in repr(workers)
+    assert "secret-workspace" not in repr(workers)
+    assert "deno" not in repr(workers)
+    call = aioclient_mock.mock_calls[0]  # type: ignore[attr-defined]
+    assert call[3]["Authorization"] == f"Bearer {TOKEN}"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"worker": "wk"},
+        ["wk-default"],
+        [{**WORKER_ROW, "worker": ""}],
+        [{**WORKER_ROW, "worker_instance": 42}],
+        [{**WORKER_ROW, "worker_group": None}],
+        [{**WORKER_ROW, "wm_version": "x" * 257}],
+        [WORKER_ROW, WORKER_ROW, WORKER_ROW],
+    ],
+)
+async def test_worker_listing_rejects_invalid_models(
+    hass: HomeAssistant, aioclient_mock: object, body: object
+) -> None:
+    """A malformed or oversized worker page fails closed."""
+    aioclient_mock.get(WORKERS_URL, json=body, headers=JSON_HEADERS)  # type: ignore[attr-defined]
+    client = WindmillInstanceClient(async_get_clientsession(hass), BASE_URL, TOKEN)
+
+    with pytest.raises(WindmillProtocolError):
+        await client.async_list_workers(PageRequest(page=1, per_page=2))
+
+
+async def test_worker_group_listing_keeps_names_only(
+    hass: HomeAssistant, aioclient_mock: object
+) -> None:
+    """Worker-group listing keeps unique names and discards their configuration."""
+    aioclient_mock.get(  # type: ignore[attr-defined]
+        WORKER_GROUPS_URL,
+        json=[
+            {"name": "default", "config": {"init_bash": "must-not-be-retained"}},
+            {"name": "gpu"},
+            {"name": "default"},
+        ],
+        headers=JSON_HEADERS,
+    )
+    client = WindmillInstanceClient(async_get_clientsession(hass), BASE_URL, TOKEN)
+
+    groups = await client.async_list_worker_groups()
+
+    assert groups == ("default", "gpu")
+    assert "must-not-be-retained" not in repr(groups)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [{"name": "default"}, ["default"], [{"config": {}}], [{"name": ""}]],
+)
+async def test_worker_group_listing_rejects_invalid_models(
+    hass: HomeAssistant, aioclient_mock: object, body: object
+) -> None:
+    """A malformed worker-group listing fails closed."""
+    aioclient_mock.get(WORKER_GROUPS_URL, json=body, headers=JSON_HEADERS)  # type: ignore[attr-defined]
+    client = WindmillInstanceClient(async_get_clientsession(hass), BASE_URL, TOKEN)
+
+    with pytest.raises(WindmillProtocolError):
+        await client.async_list_worker_groups()
+
+
+@pytest.mark.parametrize(
+    ("status", "exception_type"),
+    [
+        (HTTPStatus.UNAUTHORIZED, WindmillAuthenticationError),
+        (HTTPStatus.FORBIDDEN, WindmillAuthorizationError),
+        (HTTPStatus.NOT_FOUND, WindmillNotFoundError),
+    ],
+)
+async def test_worker_reads_keep_failures_distinct(
+    hass: HomeAssistant,
+    aioclient_mock: object,
+    status: HTTPStatus,
+    exception_type: type[Exception],
+) -> None:
+    """Worker and worker-group reads map statuses to the shared taxonomy."""
+    aioclient_mock.get(WORKERS_URL, status=status)  # type: ignore[attr-defined]
+    aioclient_mock.get(WORKER_GROUPS_URL, status=status)  # type: ignore[attr-defined]
+    client = WindmillInstanceClient(async_get_clientsession(hass), BASE_URL, TOKEN)
+
+    with pytest.raises(exception_type):
+        await client.async_list_workers(PageRequest(page=1, per_page=2))
+    with pytest.raises(exception_type):
+        await client.async_list_worker_groups()

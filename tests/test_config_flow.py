@@ -47,6 +47,7 @@ from custom_components.windmill.const import (
     OPT_RUN_OBSERVATION,
     OPT_UPDATE_ENTITY,
     OPT_WORKER_DETAILS,
+    OPT_WORKER_GROUPS,
 )
 
 TOKEN = "obviously-fake-test-token"
@@ -117,6 +118,7 @@ RESTRICTED_CAPABILITIES = CapabilityMatrix(
 ALL_FEATURES_OFF = {
     OPT_INSTANCE_HEALTH: False,
     OPT_DETAILED_HEALTH: False,
+    OPT_WORKER_GROUPS: False,
     OPT_WORKER_DETAILS: False,
     OPT_RUN_OBSERVATION: False,
     OPT_UPDATE_ENTITY: False,
@@ -139,6 +141,8 @@ def patched_client(
     capabilities: Any = FULL_CAPABILITIES,
     health: Any = HEALTH,
     detailed: Any = DETAILED_HEALTH,
+    workers: Any = (),
+    worker_groups: Any = (),
 ) -> Iterator[dict[str, AsyncMock]]:
     """Patch every network operation the flows may perform."""
     mocks = {
@@ -148,6 +152,8 @@ def patched_client(
         "capabilities": _as_mock(capabilities),
         "health": _as_mock(health),
         "detailed": _as_mock(detailed),
+        "workers": _as_mock(workers),
+        "worker_groups": _as_mock(worker_groups),
     }
     targets = {
         "server": "custom_components.windmill.api.WindmillInstanceClient.async_get_server_info",
@@ -157,6 +163,10 @@ def patched_client(
         "health": "custom_components.windmill.api.WindmillInstanceClient.async_get_health_status",
         "detailed": (
             "custom_components.windmill.api.WindmillInstanceClient.async_get_detailed_health"
+        ),
+        "workers": "custom_components.windmill.api.WindmillInstanceClient.async_list_workers",
+        "worker_groups": (
+            "custom_components.windmill.api.WindmillInstanceClient.async_list_worker_groups"
         ),
     }
     with ExitStack() as stack:
@@ -235,6 +245,7 @@ async def test_guided_onboarding_creates_entry(
         assert defaults == {
             OPT_INSTANCE_HEALTH: True,
             OPT_DETAILED_HEALTH: False,
+            OPT_WORKER_GROUPS: False,
             OPT_WORKER_DETAILS: False,
             OPT_RUN_OBSERVATION: True,
             OPT_UPDATE_ENTITY: False,
@@ -245,6 +256,7 @@ async def test_guided_onboarding_creates_entry(
             {
                 OPT_INSTANCE_HEALTH: True,
                 OPT_DETAILED_HEALTH: True,
+                OPT_WORKER_GROUPS: False,
                 OPT_WORKER_DETAILS: False,
                 OPT_RUN_OBSERVATION: True,
                 OPT_UPDATE_ENTITY: False,
@@ -258,6 +270,7 @@ async def test_guided_onboarding_creates_entry(
     assert result["options"] == {
         OPT_INSTANCE_HEALTH: True,
         OPT_DETAILED_HEALTH: True,
+        OPT_WORKER_GROUPS: False,
         OPT_WORKER_DETAILS: False,
         OPT_RUN_OBSERVATION: True,
         OPT_UPDATE_ENTITY: False,
@@ -482,6 +495,7 @@ async def _add_loaded_entry(hass: HomeAssistant) -> MockConfigEntry:
         options={
             OPT_INSTANCE_HEALTH: True,
             OPT_DETAILED_HEALTH: False,
+            OPT_WORKER_GROUPS: False,
             OPT_WORKER_DETAILS: False,
             OPT_RUN_OBSERVATION: True,
             OPT_UPDATE_ENTITY: False,
@@ -674,6 +688,7 @@ async def test_options_flow_updates_features_and_reloads(hass: HomeAssistant) ->
             {
                 OPT_INSTANCE_HEALTH: True,
                 OPT_DETAILED_HEALTH: True,
+                OPT_WORKER_GROUPS: True,
                 OPT_WORKER_DETAILS: True,
                 OPT_RUN_OBSERVATION: False,
                 OPT_UPDATE_ENTITY: False,
@@ -685,6 +700,7 @@ async def test_options_flow_updates_features_and_reloads(hass: HomeAssistant) ->
     assert entry.options == {
         OPT_INSTANCE_HEALTH: True,
         OPT_DETAILED_HEALTH: True,
+        OPT_WORKER_GROUPS: True,
         OPT_WORKER_DETAILS: True,
         OPT_RUN_OBSERVATION: False,
         OPT_UPDATE_ENTITY: False,
@@ -713,6 +729,7 @@ async def test_options_flow_defaults_for_legacy_entry(hass: HomeAssistant) -> No
     assert defaults == {
         OPT_INSTANCE_HEALTH: True,
         OPT_DETAILED_HEALTH: False,
+        OPT_WORKER_GROUPS: False,
         OPT_WORKER_DETAILS: False,
         OPT_RUN_OBSERVATION: True,
         OPT_UPDATE_ENTITY: False,

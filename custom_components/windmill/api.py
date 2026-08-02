@@ -20,7 +20,9 @@ from .const import DEFAULT_CONNECT_TIMEOUT, DEFAULT_REQUEST_TIMEOUT, MAX_RESPONS
 MAX_PAGE_SIZE = 100
 MAX_RETRY_AFTER = 300.0
 MAX_WORKSPACE_ROWS = 200
+MAX_WORKER_GROUP_ROWS = 200
 MAX_TEXT_FIELD_LENGTH = 256
+ALIVE_WORKER_SECONDS = 300
 
 
 class WindmillError(Exception):
@@ -172,6 +174,16 @@ class WindmillDetailedHealth:
     workers_alive: int | None
     pending_jobs: int | None
     running_jobs: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class WindmillWorker:
+    """Bounded non-sensitive projection of one alive worker ping."""
+
+    name: str
+    instance: str
+    group: str
+    version: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -404,6 +416,29 @@ class WindmillInstanceClient:
         )
         return self._parse_detailed_health(self._decode_json(response))
 
+    async def async_list_workers(
+        self, page: PageRequest, *, ping_since: int = ALIVE_WORKER_SECONDS
+    ) -> tuple[WindmillWorker, ...]:
+        """Return one bounded page of alive workers without any sensitive field."""
+        response = await self._async_get(
+            "/api/workers/list",
+            authenticated=True,
+            accept="application/json",
+            params={**page.as_params(), "ping_since": ping_since},
+        )
+        self._raise_for_status(response, not_found=WindmillNotFoundError)
+        return self._parse_workers(self._decode_json(response), page.per_page)
+
+    async def async_list_worker_groups(self) -> tuple[str, ...]:
+        """Return the configured worker-group names and discard their configuration."""
+        response = await self._async_get(
+            "/api/configs/list_worker_groups",
+            authenticated=True,
+            accept="application/json",
+        )
+        self._raise_for_status(response, not_found=WindmillNotFoundError)
+        return self._parse_worker_groups(self._decode_json(response))
+
     async def _probe_update_visibility(self) -> CapabilityAvailability:
         """Probe only the bounded update-check contract, not deployment eligibility."""
 
@@ -600,6 +635,50 @@ class WindmillInstanceClient:
                 raise WindmillProtocolError("Windmill returned an invalid workspace")
             workspaces.append(WindmillWorkspaceInfo(id=identifier.strip(), name=name.strip()))
         return tuple(workspaces)
+
+    @staticmethod
+    def _parse_workers(data: Any, limit: int) -> tuple[WindmillWorker, ...]:
+        """Allowlist four bounded worker fields and discard every other value."""
+        if not isinstance(data, list) or len(data) > limit:
+            raise WindmillProtocolError("Windmill returned an invalid worker list")
+        workers: list[WindmillWorker] = []
+        for row in data:
+            if not isinstance(row, dict):
+                raise WindmillProtocolError("Windmill returned an invalid worker")
+            name = row.get("worker")
+            instance = row.get("worker_instance")
+            group = row.get("worker_group")
+            version = row.get("wm_version")
+            if not (
+                _is_bounded_text(name)
+                and _is_bounded_text(instance)
+                and _is_bounded_text(group)
+                and _is_bounded_text(version)
+            ):
+                raise WindmillProtocolError("Windmill returned an invalid worker")
+            workers.append(
+                WindmillWorker(
+                    name=name.strip(),
+                    instance=instance.strip(),
+                    group=group.strip(),
+                    version=version.strip(),
+                )
+            )
+        return tuple(workers)
+
+    @staticmethod
+    def _parse_worker_groups(data: Any) -> tuple[str, ...]:
+        """Keep only the bounded name of every configured worker group."""
+        if not isinstance(data, list) or len(data) > MAX_WORKER_GROUP_ROWS:
+            raise WindmillProtocolError("Windmill returned an invalid worker group list")
+        groups: list[str] = []
+        for row in data:
+            if not isinstance(row, dict) or not _is_bounded_text(row.get("name")):
+                raise WindmillProtocolError("Windmill returned an invalid worker group")
+            name = str(row["name"]).strip()
+            if name not in groups:
+                groups.append(name)
+        return tuple(groups)
 
     @classmethod
     def _parse_health_status(cls, data: Any) -> WindmillHealthStatus:

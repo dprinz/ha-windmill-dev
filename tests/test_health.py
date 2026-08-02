@@ -68,13 +68,16 @@ CONTEXT_REQUIRED = CapabilityAvailability(
 
 
 def _capabilities(
-    *, health: CapabilityAvailability = AVAILABLE, detailed: CapabilityAvailability = AVAILABLE
+    *,
+    health: CapabilityAvailability = AVAILABLE,
+    detailed: CapabilityAvailability = AVAILABLE,
+    workers: CapabilityAvailability = AVAILABLE,
 ) -> CapabilityMatrix:
-    """Build a capability matrix with the two health capabilities under test."""
+    """Build a capability matrix with the capabilities under test."""
     return CapabilityMatrix(
         health=health,
         detailed_health=detailed,
-        workers=AVAILABLE,
+        workers=workers,
         runs=AVAILABLE,
         script_discovery=AVAILABLE,
         flow_discovery=AVAILABLE,

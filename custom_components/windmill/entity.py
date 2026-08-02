@@ -6,7 +6,7 @@ from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import WindmillHealthCoordinator
+from .coordinator import WindmillHealthCoordinator, WindmillWorkerCoordinator
 from .models import WindmillRuntimeData
 
 
@@ -40,4 +40,27 @@ class WindmillHealthEntity(CoordinatorEntity[WindmillHealthCoordinator]):
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry_id}_{self._key}"
         self._attr_translation_key = self._key
+        self._attr_device_info = build_device_info(entry_id, title, runtime)
+
+
+class WindmillWorkerEntity(CoordinatorEntity[WindmillWorkerCoordinator]):
+    """Base entity for values derived from one shared worker snapshot."""
+
+    _attr_has_entity_name = True
+    _key: str
+
+    def __init__(
+        self,
+        coordinator: WindmillWorkerCoordinator,
+        entry_id: str,
+        title: str,
+        runtime: WindmillRuntimeData,
+        subject: str,
+    ) -> None:
+        """Attach the entity to one stable worker group or worker instance."""
+        super().__init__(coordinator)
+        self._subject = subject
+        self._attr_unique_id = f"{entry_id}_{self._key}_{subject}"
+        self._attr_translation_key = self._key
+        self._attr_translation_placeholders = {"subject": subject}
         self._attr_device_info = build_device_info(entry_id, title, runtime)

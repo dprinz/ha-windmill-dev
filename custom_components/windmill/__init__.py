@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -17,6 +18,7 @@ from .api import (
     WindmillAuthorizationError,
     WindmillClient,
     WindmillConnectionError,
+    WindmillError,
     WindmillProtocolError,
     WindmillRateLimitError,
     WindmillRequestError,
@@ -31,9 +33,17 @@ from .const import (
     FEATURE_DEFAULTS,
     OPT_DETAILED_HEALTH,
     OPT_INSTANCE_HEALTH,
+    OPT_WORKER_DETAILS,
+    OPT_WORKER_GROUPS,
 )
-from .coordinator import WindmillCapabilityCoordinator, WindmillHealthCoordinator
+from .coordinator import (
+    WindmillCapabilityCoordinator,
+    WindmillHealthCoordinator,
+    WindmillWorkerCoordinator,
+)
 from .models import WindmillRuntimeData
+
+_LOGGER = logging.getLogger(__name__)
 
 type WindmillConfigEntry = ConfigEntry[WindmillRuntimeData]
 
@@ -85,11 +95,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: WindmillConfigEntry) -> 
         )
         await health_coordinator.async_config_entry_first_refresh()
 
+    worker_coordinator: WindmillWorkerCoordinator | None = None
+    worker_features = _feature_enabled(entry, OPT_WORKER_GROUPS) or _feature_enabled(
+        entry, OPT_WORKER_DETAILS
+    )
+    if worker_features and _supported(capabilities.workers):
+        worker_coordinator = WindmillWorkerCoordinator(
+            hass,
+            entry,
+            client,
+            known_groups=await _async_configured_worker_groups(client),
+        )
+        await worker_coordinator.async_config_entry_first_refresh()
+
     entry.runtime_data = WindmillRuntimeData(
         client=client,
         connection=connection,
         capability_coordinator=capability_coordinator,
         health_coordinator=health_coordinator,
+        worker_coordinator=worker_coordinator,
     )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
@@ -108,3 +132,14 @@ def _feature_enabled(entry: WindmillConfigEntry, option: str) -> bool:
 def _supported(availability: CapabilityAvailability) -> bool:
     """Return whether a capability probe currently proves support."""
     return availability.status is CapabilityStatus.AVAILABLE
+
+
+async def _async_configured_worker_groups(client: WindmillClient) -> tuple[str, ...]:
+    """Read configured worker groups, degrading to observed groups when denied."""
+    try:
+        return await client.async_list_worker_groups()
+    except WindmillAuthenticationError as err:
+        raise ConfigEntryAuthFailed("Windmill authentication failed") from err
+    except WindmillError:
+        _LOGGER.debug("Windmill worker groups are not listable; using observed groups instead")
+        return ()

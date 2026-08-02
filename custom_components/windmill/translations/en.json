@@ -34,13 +34,15 @@
         "data": {
           "instance_health": "Instance health",
           "detailed_health": "Detailed health diagnostics",
+          "worker_groups": "Worker groups",
           "worker_details": "Individual worker details",
           "run_observation": "Job and run observation",
           "update_entity": "Update availability"
         },
         "data_description": {
           "detailed_health": "Administrative: needs a token that Windmill accepts on the detailed health endpoint.",
-          "worker_details": "High cardinality: creates entities per worker and is meant for self-hosted operators.",
+          "worker_groups": "Administrative: exposes alive workers and version drift per worker group.",
+          "worker_details": "High cardinality: adds one entity per worker instance and is meant for self-hosted operators.",
           "update_entity": "Self-hosted only. Managed Windmill Cloud deployments are updated by Windmill."
         }
       },
@@ -102,6 +104,15 @@
       },
       "running_jobs": {
         "name": "Running jobs"
+      },
+      "worker_group_alive": {
+        "name": "{subject} workers"
+      },
+      "worker_group_versions": {
+        "name": "{subject} worker versions"
+      },
+      "worker_instance_alive": {
+        "name": "Workers on {subject}"
       }
     }
   },
@@ -113,13 +124,15 @@
         "data": {
           "instance_health": "Instance health",
           "detailed_health": "Detailed health diagnostics",
+          "worker_groups": "Worker groups",
           "worker_details": "Individual worker details",
           "run_observation": "Job and run observation",
           "update_entity": "Update availability"
         },
         "data_description": {
           "detailed_health": "Administrative: needs a token that Windmill accepts on the detailed health endpoint.",
-          "worker_details": "High cardinality: creates entities per worker and is meant for self-hosted operators.",
+          "worker_groups": "Administrative: exposes alive workers and version drift per worker group.",
+          "worker_details": "High cardinality: adds one entity per worker instance and is meant for self-hosted operators.",
           "update_entity": "Self-hosted only. Managed Windmill Cloud deployments are updated by Windmill."
         }
       }
