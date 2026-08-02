@@ -1,7 +1,7 @@
 ---
 id: WMHA-0022
 title: Never republish a completion after a failed run poll
-status: backlog
+status: done
 type: quality
 priority: medium
 risk: medium
@@ -62,11 +62,11 @@ The same shape applies to any listener notification that is not a fresh observat
 
 ## Acceptance criteria
 
-- [ ] A regression test covering "successful poll with a completion, failed poll, successful poll
+- [x] A regression test covering "successful poll with a completion, failed poll, successful poll
       without a completion" keeps the entity state unchanged, and fails against the current code.
-- [ ] Existing deduplication, ordering, historical-replay and empty-first-poll behavior are
+- [x] Existing deduplication, ordering, historical-replay and empty-first-poll behavior are
       unchanged.
-- [ ] The rate-limit availability test still passes unchanged.
+- [x] The rate-limit availability test still passes unchanged.
 
 ## Non-goals
 
@@ -86,27 +86,37 @@ The same shape applies to any listener notification that is not a fresh observat
 
 ## Validation evidence
 
-Fill during implementation; do not pre-check.
-
 | Check | Command or inspection | Result |
 | --- | --- | --- |
-| Repository guardrails | `python scripts/validate_repository.py` | not run |
-| Run tests | `uv run pytest -q tests/test_runs.py` | not run |
-| Full suite and coverage | `uv run pytest -q --cov=custom_components.windmill --cov-report=term-missing --cov-fail-under=95` | not run |
+| Repository guardrails | `python scripts/validate_repository.py` | passed (23 tickets checked) |
+| Run tests | `uv run pytest -q tests/test_runs.py` | passed, 19 tests |
+| Regression check | Guard disabled entirely; then each half disabled separately | failed as required: no guard fails `test_failed_poll_never_republishes_a_completion`; without the identity check `test_repeated_notification_of_one_snapshot_publishes_once` fails; without the `last_update_success` check `test_failed_poll_publishes_nothing_the_entity_has_not_published` fails |
+| Full suite and coverage | `uv run pytest -q --cov=custom_components.windmill --cov-report=term-missing --cov-fail-under=95` | passed, 358 tests, 97.05%; `event.py` at 100% |
+| Lint, format and types | `uv run ruff check custom_components tests`; `uv run ruff format --check custom_components tests`; `uv run mypy custom_components/windmill` | passed |
+| Lock and whitespace | `uv lock --check`; `git diff --check` | passed |
 
 ## Review evidence
 
-- Reviewer/session: not started
-- Findings: not started
-- Resolution: not started
+- Reviewer/session: separate review pass inside the implementing session; the same deviation from
+  the independent-reviewer rule as `WMHA-0018` to `WMHA-0020` applies and is recorded here.
+- Findings: three. First, the initial version of the repeated-notification test passed against the
+  broken code, because under the frozen test clock a republication carries the identical timestamp
+  and is therefore invisible in the entity state; it only discriminates after `freezer.tick(...)`.
+  Second, both halves of the guard had to be proven load-bearing separately, because either one
+  alone passes the other's test. Third, the `last_update_success` half revealed that completions
+  observed by the refresh during config-entry setup are never published at all, since the entity is
+  added afterwards and never receives that snapshot.
+- Resolution: the test now moves the clock and asserts on captured `state_changed` events; both
+  halves of the guard have their own failing-without-it regression test; the setup-refresh gap
+  became `WMHA-0023` rather than being fixed here, because it is a lost event rather than a
+  duplicated one and needs its own acceptance criteria.
 
 ## Residual risks and follow-up
 
-- A guard on `last_update_success` is the smallest fix, but the durable question is whether a
-  snapshot should carry deltas at all. Consider recording the answer in an ADR if the fix changes
-  the coordinator contract.
+- The durable question — whether a coordinator snapshot should carry deltas at all — is unanswered.
+  The fix keeps the coordinator contract, so no ADR was written; the reasoning is in the blog note.
+- `WMHA-0023` covers the completions observed during setup.
 
 ## Blog notes
 
-- Candidate: a coordinator snapshot that carries deltas instead of state republishes them on every
-  listener notification, including the ones that observed nothing.
+- Written: `docs/blog/2026-08-02-a-snapshot-that-carries-deltas-is-published-by-every-listener.md`

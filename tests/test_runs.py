@@ -7,6 +7,7 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from freezegun.api import FrozenDateTimeFactory
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import EVENT_STATE_CHANGED, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
@@ -172,6 +173,68 @@ async def test_new_completions_fire_one_event_each(hass: HomeAssistant) -> None:
     await _refresh(hass, jobs=(*INITIAL_JOBS, CANCELED_JOB), minutes=4)
 
     assert hass.states.get("event.home_assistant_run").state == fired_at
+
+
+async def test_failed_poll_never_republishes_a_completion(hass: HomeAssistant) -> None:
+    """A failed poll notifies listeners with the previous snapshot; it must publish nothing."""
+    await _setup_entry(hass)
+
+    await _refresh(hass, jobs=(*INITIAL_JOBS, CANCELED_JOB))
+    published_at = hass.states.get("event.home_assistant_run").state
+    assert published_at != STATE_UNKNOWN
+
+    await _refresh(hass, jobs=WindmillRateLimitError(retry_after=30.0), minutes=4)
+
+    assert hass.states.get("event.home_assistant_run").state == STATE_UNAVAILABLE
+
+    await _refresh(hass, jobs=(*INITIAL_JOBS, CANCELED_JOB), minutes=6)
+
+    recovered = hass.states.get("event.home_assistant_run")
+    assert recovered.state == published_at
+    assert recovered.attributes["job_id"] == CANCELED_JOB.id
+
+
+async def test_repeated_notification_of_one_snapshot_publishes_once(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """Only a fresh observation may publish, so a repeated notification changes nothing."""
+    entry = await _setup_entry(hass)
+
+    await _refresh(hass, jobs=(*INITIAL_JOBS, CANCELED_JOB))
+    changes = async_capture_events(hass, EVENT_STATE_CHANGED)
+
+    # The event state is the trigger timestamp, so the clock must move for a republication to be
+    # distinguishable from the first publication.
+    freezer.tick(timedelta(seconds=30))
+    entry.runtime_data.run_coordinator.async_update_listeners()
+    await hass.async_block_till_done()
+
+    assert not [
+        change for change in changes if change.data["entity_id"] == "event.home_assistant_run"
+    ]
+
+
+async def test_failed_poll_publishes_nothing_the_entity_has_not_published(
+    hass: HomeAssistant,
+) -> None:
+    """A failed poll publishes nothing even when its stale snapshot carries unpublished events."""
+    entry = await _setup_entry(hass, jobs=(RUNNING_JOB,))
+
+    # The refresh during setup observes a completion before the event entity is added, so the
+    # entity's first notification carries a snapshot it never published.
+    with patched_client(jobs=(RUNNING_JOB, CANCELED_JOB)):
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert hass.states.get("event.home_assistant_run").state == STATE_UNKNOWN
+
+    await _refresh(hass, jobs=WindmillRateLimitError(retry_after=30.0), minutes=4)
+
+    assert hass.states.get("event.home_assistant_run").state == STATE_UNAVAILABLE
+
+    await _refresh(hass, jobs=(RUNNING_JOB, CANCELED_JOB), minutes=6)
+
+    assert hass.states.get("event.home_assistant_run").state == STATE_UNKNOWN
 
 
 async def test_several_completions_in_one_poll_each_fire(hass: HomeAssistant) -> None:
