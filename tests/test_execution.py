@@ -22,12 +22,14 @@ from custom_components.windmill.api import (
 from custom_components.windmill.const import (
     ATTR_ARGUMENTS,
     ATTR_CONFIG_ENTRY_ID,
+    ATTR_JOB_ID,
     ATTR_KIND,
     ATTR_PATH,
     DOMAIN,
     OPT_RUNNABLE_BUTTONS,
     OPT_RUNNABLES,
 )
+from custom_components.windmill.coordinator import StartedJobRegistry
 from tests.test_health import ENTRY_DATA, WORKSPACE
 from tests.test_runnables import (
     BASE_OPTIONS,
@@ -59,6 +61,21 @@ PARAMETERLESS_LIGHTS = RunnableDetails(
     parameters=(),
     schema_supported=True,
 )
+
+
+async def _press(hass: HomeAssistant, job_id: str = JOB_ID) -> AsyncMock:
+    """Press the button of the parameterless lights script."""
+    with patch(
+        "custom_components.windmill.api.WindmillClient.async_run_runnable",
+        new=AsyncMock(return_value=job_id),
+    ) as run:
+        await hass.services.async_call(
+            "button",
+            "press",
+            {"entity_id": "button.home_assistant_run_u_automation_lights"},
+            blocking=True,
+        )
+    return run
 
 
 async def _run(hass: HomeAssistant, entry: MockConfigEntry, **overrides: Any) -> Any:
@@ -280,19 +297,66 @@ async def test_button_press_starts_the_runnable(hass: HomeAssistant) -> None:
         details=PARAMETERLESS_LIGHTS,
     )
 
-    with patch(
-        "custom_components.windmill.api.WindmillClient.async_run_runnable",
-        new=AsyncMock(return_value=JOB_ID),
-    ) as run:
-        await hass.services.async_call(
-            "button",
-            "press",
-            {"entity_id": "button.home_assistant_run_u_automation_lights"},
-            blocking=True,
-        )
+    run = await _press(hass)
 
     assert run.await_args.args[2] == {}
     assert entry.state.name == "LOADED"
+
+
+async def test_button_started_job_is_tracked_and_cancellable(hass: HomeAssistant) -> None:
+    """A button start is a Home Assistant start, so its job is tracked like an action start."""
+    entry = await _setup_entry(
+        hass,
+        options={OPT_RUNNABLES: [LIGHTS_SELECTION], OPT_RUNNABLE_BUTTONS: True},
+        details=PARAMETERLESS_LIGHTS,
+    )
+
+    await _press(hass)
+
+    tracked = entry.runtime_data.started_jobs.get(JOB_ID)
+    assert tracked is not None
+    assert (tracked.kind, tracked.path) == ("script", "u/automation/lights")
+    assert set(tracked.as_dict()) == {"job_id", "kind", "path", "started_at"}
+
+    with patch(
+        "custom_components.windmill.api.WindmillClient.async_cancel_job", new=AsyncMock()
+    ) as cancel:
+        await hass.services.async_call(
+            DOMAIN,
+            "cancel",
+            {ATTR_CONFIG_ENTRY_ID: entry.entry_id, ATTR_JOB_ID: JOB_ID},
+            blocking=True,
+        )
+
+    assert cancel.await_args.args[0] == JOB_ID
+    assert entry.runtime_data.started_jobs.get(JOB_ID) is None
+
+
+async def test_tracking_failure_never_hides_a_started_job(hass: HomeAssistant) -> None:
+    """The job is already running when tracking fails, so neither start path reports a failure."""
+    entry = await _setup_entry(
+        hass,
+        options={OPT_RUNNABLES: [LIGHTS_SELECTION], OPT_RUNNABLE_BUTTONS: True},
+        details=PARAMETERLESS_LIGHTS,
+    )
+
+    with (
+        patch.object(
+            StartedJobRegistry,
+            "async_track",
+            new=AsyncMock(side_effect=OSError("store unavailable")),
+        ),
+        patch(
+            "custom_components.windmill.api.WindmillClient.async_run_runnable",
+            new=AsyncMock(return_value=JOB_ID),
+        ),
+    ):
+        run = await _press(hass)
+        response = await _run(hass, entry, **{ATTR_ARGUMENTS: {}})
+
+    assert run.await_args.args[2] == {}
+    assert response == {"job_id": JOB_ID}
+    assert entry.runtime_data.started_jobs.get(JOB_ID) is None
 
 
 async def test_runnable_with_parameters_gets_no_button(hass: HomeAssistant) -> None:

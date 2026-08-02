@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Mapping
 from typing import Any
 
@@ -44,6 +45,8 @@ from .coordinator import ResolvedRunnable, TrackedJob
 from .models import WindmillRuntimeData
 
 type WindmillEntry = ConfigEntry[WindmillRuntimeData]
+
+_LOGGER = logging.getLogger(__name__)
 
 SERVICE_RUN = "run"
 SERVICE_CANCEL = "cancel"
@@ -88,18 +91,7 @@ def async_register_services(hass: HomeAssistant) -> None:
         path = call.data[ATTR_PATH]
         resolved = _async_resolve_runnable(entry, kind, path)
         arguments = validate_arguments(resolved, call.data[ATTR_ARGUMENTS])
-        job_id = await async_start_runnable(entry, resolved, arguments)
-        registry = entry.runtime_data.started_jobs
-        if registry is not None:
-            await registry.async_track(
-                TrackedJob(
-                    job_id=job_id,
-                    kind=kind.value,
-                    path=path,
-                    started_at=dt_util.utcnow(),
-                )
-            )
-        return {"job_id": job_id}
+        return {"job_id": await async_start_and_track_runnable(entry, resolved, arguments)}
 
     async def async_cancel(call: ServiceCall) -> ServiceResponse:
         """Cancel one job that Home Assistant started and still tracks."""
@@ -145,6 +137,37 @@ def async_register_services(hass: HomeAssistant) -> None:
         supports_response=SupportsResponse.OPTIONAL,
     )
     hass.services.async_register(DOMAIN, SERVICE_CANCEL, async_cancel, schema=CANCEL_SCHEMA)
+
+
+async def async_start_and_track_runnable(
+    entry: WindmillEntry, resolved: ResolvedRunnable, arguments: Mapping[str, Any]
+) -> str:
+    """Start one resolved runnable and record it as started by Home Assistant.
+
+    Every Home Assistant start path goes through this function, so a job is cancellable and is
+    reported as Home Assistant-started regardless of whether an action or a button started it.
+    """
+    job_id = await async_start_runnable(entry, resolved, arguments)
+    registry = entry.runtime_data.started_jobs
+    if registry is not None:
+        try:
+            await registry.async_track(
+                TrackedJob(
+                    job_id=job_id,
+                    kind=resolved.selection.kind.value,
+                    path=resolved.selection.path,
+                    started_at=dt_util.utcnow(),
+                )
+            )
+        except Exception:
+            # The job is already running, so a persistence failure must never be reported as a
+            # failed start; the job is only lost for cancellation and origin reporting.
+            _LOGGER.warning(
+                "Started Windmill job %s but could not record it; it cannot be cancelled through "
+                "Home Assistant",
+                job_id,
+            )
+    return job_id
 
 
 async def async_start_runnable(

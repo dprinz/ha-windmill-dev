@@ -26,10 +26,11 @@ from custom_components.windmill.const import (
     DOMAIN,
     MAX_TRACKED_JOBS,
     OPT_RUN_OBSERVATION,
+    OPT_RUNNABLE_BUTTONS,
     OPT_RUNNABLES,
 )
 from custom_components.windmill.coordinator import StartedJobRegistry, TrackedJob
-from tests.test_execution import JOB_ID, _run
+from tests.test_execution import JOB_ID, PARAMETERLESS_LIGHTS, _press, _run
 from tests.test_runnables import LIGHTS_SELECTION, _setup_entry, patched_client
 
 OTHER_JOB_ID = "00000000-0000-4000-8000-00000000000b"
@@ -154,6 +155,50 @@ async def test_registry_survives_reload_without_duplicate_events(hass: HomeAssis
     assert first.attributes["started_by_home_assistant"] is True
     assert first.attributes["job_id"] == JOB_ID
     assert hass.states.get("event.home_assistant_run").state == first.state
+    assert entry.runtime_data.started_jobs.get(JOB_ID) is None
+
+
+async def test_button_started_completion_reports_home_assistant_origin(
+    hass: HomeAssistant,
+) -> None:
+    """A completion of a button-started job is reported as started by Home Assistant."""
+    with patch(
+        "custom_components.windmill.api.WindmillClient.async_list_jobs",
+        new=AsyncMock(return_value=()),
+    ):
+        entry = await _setup_entry(
+            hass,
+            options={
+                OPT_RUNNABLES: [LIGHTS_SELECTION],
+                OPT_RUNNABLE_BUTTONS: True,
+                OPT_RUN_OBSERVATION: True,
+            },
+            details=PARAMETERLESS_LIGHTS,
+        )
+        await _press(hass)
+
+    completion = WindmillJob(
+        id=JOB_ID,
+        state=JobState.SUCCESS,
+        kind="script",
+        path="u/automation/lights",
+        created_at=dt_util.utcnow(),
+        completed_at=dt_util.utcnow(),
+        duration_ms=1200,
+    )
+    with (
+        patched_client(details=PARAMETERLESS_LIGHTS),
+        patch(
+            "custom_components.windmill.api.WindmillClient.async_list_jobs",
+            new=AsyncMock(return_value=(completion,)),
+        ),
+    ):
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=2))
+        await hass.async_block_till_done()
+
+    state = hass.states.get("event.home_assistant_run")
+    assert state.attributes["job_id"] == JOB_ID
+    assert state.attributes["started_by_home_assistant"] is True
     assert entry.runtime_data.started_jobs.get(JOB_ID) is None
 
 

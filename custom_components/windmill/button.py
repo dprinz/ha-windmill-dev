@@ -12,7 +12,7 @@ from .const import FEATURE_DEFAULTS, OPT_RUNNABLE_BUTTONS
 from .coordinator import ResolvedRunnable, WindmillRunnableCoordinator
 from .entity import build_device_info
 from .models import WindmillRuntimeData
-from .services import async_start_runnable
+from .services import async_start_and_track_runnable
 
 
 async def async_setup_entry(
@@ -68,6 +68,6 @@ class WindmillRunnableButton(CoordinatorEntity[WindmillRunnableCoordinator], But
         return super().available and resolved is not None and resolved.executable
 
     async def async_press(self) -> None:
-        """Start the runnable asynchronously and discard the job identifier."""
+        """Start the runnable asynchronously and track it like an action-started job."""
         resolved = self.coordinator.data[self._key]
-        await async_start_runnable(self._entry, resolved, {})
+        await async_start_and_track_runnable(self._entry, resolved, {})
