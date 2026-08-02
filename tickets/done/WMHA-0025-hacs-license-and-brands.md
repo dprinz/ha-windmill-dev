@@ -1,7 +1,7 @@
 ---
 id: WMHA-0025
 title: Fix HACS validation failures for license and brands
-status: in-progress
+status: done
 type: quality
 priority: high
 risk: low
@@ -31,10 +31,10 @@ new verification date.
 
 ## Acceptance criteria
 
-- [ ] The repository carries an OSI-approved license file at the root.
-- [ ] Brand assets exist where the HACS action looks for them.
-- [ ] The `Validate HACS and hassfest` workflow concludes successfully on `main`.
-- [ ] Research note R-003 is corrected with source and verification date.
+- [x] The repository carries an OSI-approved license file at the root.
+- [x] Brand assets exist where the HACS action looks for them.
+- [x] The `Validate HACS and hassfest` workflow concludes successfully on `main`.
+- [x] Research note R-003 is corrected with source and verification date.
 
 ## Non-goals
 
@@ -45,8 +45,10 @@ new verification date.
 
 | Check | Command or inspection | Result |
 | --- | --- | --- |
-| Repository guardrails | `python scripts/validate_repository.py` | not run |
-| HACS CI run | `gh run list` / `gh run view` | not run |
+| Repository guardrails | `python scripts/validate_repository.py` | passed (25 tickets checked) |
+| Test suite | `uv run pytest -q` | 385 passed |
+| Archive still contains brand assets | `python scripts/build_release.py --tag v0.1.0` | passed (`brand/icon.png`, `brand/icon@2x.png` in `windmill.zip`) |
+| HACS CI run | `gh run list` / `gh run view` (run 30758487986) | `Validate HACS and hassfest`: success on `main` (2026-08-02); guardrails run 30758488003 also success |
 
 ## Review evidence
 
