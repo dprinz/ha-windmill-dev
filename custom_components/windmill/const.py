@@ -16,6 +16,9 @@ OPT_WORKER_GROUPS = "worker_groups"
 OPT_WORKER_DETAILS = "worker_details"
 OPT_RUN_OBSERVATION = "run_observation"
 OPT_UPDATE_ENTITY = "update_entity"
+OPT_RUNNABLES = "runnables"
+
+MAX_SELECTED_RUNNABLES = 25
 
 FEATURE_OPTIONS = (
     OPT_INSTANCE_HEALTH,

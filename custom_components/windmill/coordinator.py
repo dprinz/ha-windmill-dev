@@ -16,18 +16,26 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import (
+    AddressingMode,
     CapabilityMatrix,
     JobState,
     PageRequest,
+    RunnableDetails,
+    RunnableKind,
     WindmillAuthenticationError,
+    WindmillAuthorizationError,
     WindmillClient,
     WindmillDetailedHealth,
     WindmillError,
     WindmillHealthStatus,
     WindmillJob,
+    WindmillNotFoundError,
+    WindmillRequestError,
+    WindmillRunnable,
     WindmillWorker,
+    normalize_runnable_path,
 )
-from .const import DOMAIN
+from .const import DOMAIN, MAX_SELECTED_RUNNABLES
 
 _LOGGER = logging.getLogger(__name__)
 CAPABILITY_UPDATE_INTERVAL = timedelta(hours=6)
@@ -40,6 +48,9 @@ RUN_PAGE_SIZE = 100
 MAX_RUN_PAGES = 3
 MAX_SEEN_JOBS = 200
 RUN_STORAGE_VERSION = 1
+RUNNABLE_UPDATE_INTERVAL = timedelta(minutes=30)
+RUNNABLE_PAGE_SIZE = 100
+MAX_RUNNABLE_PAGES = 3
 
 
 @dataclass
@@ -374,3 +385,129 @@ class WindmillRunCoordinator(DataUpdateCoordinator[WindmillRunSnapshot]):
             last_failure=self._state.last_failure,
             new_events=tuple(events),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class RunnableSelection:
+    """One explicitly selected runnable as stored in config-entry options."""
+
+    kind: RunnableKind
+    path: str
+    mode: AddressingMode
+
+    @classmethod
+    def from_dict(cls, data: Any) -> RunnableSelection | None:
+        """Restore one stored selection, ignoring anything unreadable."""
+        if not isinstance(data, dict):
+            return None
+        try:
+            kind = RunnableKind(str(data.get("kind")))
+            mode = AddressingMode(str(data.get("mode", AddressingMode.LATEST.value)))
+            path = normalize_runnable_path(str(data.get("path", "")))
+        except ValueError, WindmillRequestError:
+            return None
+        return cls(kind=kind, path=path, mode=mode)
+
+    def as_dict(self) -> dict[str, str]:
+        """Return the JSON-serializable selection."""
+        return {"kind": self.kind.value, "path": self.path, "mode": self.mode.value}
+
+    @property
+    def key(self) -> tuple[str, str]:
+        """Return the stable identity of this selection."""
+        return (self.kind.value, self.path)
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedRunnable:
+    """One selected runnable resolved against the current workspace."""
+
+    selection: RunnableSelection
+    available: bool
+    reason: str | None = None
+    details: RunnableDetails | None = None
+
+    @property
+    def executable(self) -> bool:
+        """Return whether a later execution ticket may address this runnable."""
+        return self.available and self.details is not None and self.details.schema_supported
+
+
+def load_selections(raw: Any) -> tuple[RunnableSelection, ...]:
+    """Read the stored runnable selection, discarding unreadable entries."""
+    if not isinstance(raw, list):
+        return ()
+    selections: list[RunnableSelection] = []
+    seen: set[tuple[str, str]] = set()
+    for item in raw[:MAX_SELECTED_RUNNABLES]:
+        selection = RunnableSelection.from_dict(item)
+        if selection is None or selection.key in seen:
+            continue
+        seen.add(selection.key)
+        selections.append(selection)
+    return tuple(selections)
+
+
+class WindmillRunnableCoordinator(
+    DataUpdateCoordinator[Mapping[tuple[str, str], ResolvedRunnable]]
+):
+    """Resolve explicitly selected runnables without exposing a whole workspace."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry[Any],
+        client: WindmillClient,
+        selections: tuple[RunnableSelection, ...],
+    ) -> None:
+        """Initialize the config-entry-owned runnable coordinator."""
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=f"{DOMAIN} runnables",
+            config_entry=entry,
+            update_interval=RUNNABLE_UPDATE_INTERVAL,
+        )
+        self.client = client
+        self.selections = selections
+
+    async def _async_update_data(self) -> Mapping[tuple[str, str], ResolvedRunnable]:
+        """Resolve every selection into availability and bounded schema metadata."""
+        resolved: dict[tuple[str, str], ResolvedRunnable] = {}
+        for selection in self.selections:
+            try:
+                details = await self.client.async_get_runnable(selection.kind, selection.path)
+            except WindmillAuthenticationError as err:
+                raise ConfigEntryAuthFailed("Windmill authentication failed") from err
+            except WindmillNotFoundError:
+                resolved[selection.key] = ResolvedRunnable(selection, False, "missing")
+                continue
+            except WindmillAuthorizationError:
+                resolved[selection.key] = ResolvedRunnable(selection, False, "unauthorized")
+                continue
+            except WindmillError as err:
+                raise UpdateFailed("Unable to refresh Windmill runnables") from err
+            resolved[selection.key] = ResolvedRunnable(
+                selection,
+                True,
+                None if details.schema_supported else details.schema_reason,
+                details,
+            )
+        return resolved
+
+
+async def async_discover_runnables(client: WindmillClient) -> tuple[WindmillRunnable, ...]:
+    """List bounded scripts and flows for the selection form."""
+    discovered: list[WindmillRunnable] = []
+    for kind in (RunnableKind.SCRIPT, RunnableKind.FLOW):
+        try:
+            for page in range(1, MAX_RUNNABLE_PAGES + 1):
+                found = await client.async_list_runnables(
+                    kind, PageRequest(page=page, per_page=RUNNABLE_PAGE_SIZE)
+                )
+                discovered.extend(found)
+                if len(found) < RUNNABLE_PAGE_SIZE:
+                    break
+        except WindmillError:
+            _LOGGER.debug("Windmill %s discovery is currently unavailable", kind.value)
+    return tuple(discovered)

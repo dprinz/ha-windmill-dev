@@ -24,6 +24,10 @@ MAX_WORKSPACE_ROWS = 200
 MAX_WORKER_GROUP_ROWS = 200
 MAX_TEXT_FIELD_LENGTH = 256
 ALIVE_WORKER_SECONDS = 300
+MAX_RUNNABLE_PARAMETERS = 50
+MAX_ENUM_VALUES = 20
+RUNNABLE_PATH_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.\-]*(?:/[A-Za-z0-9_][A-Za-z0-9_.\-]*)*")
+SUPPORTED_PARAMETER_TYPES = frozenset({"string", "number", "integer", "boolean", "array", "object"})
 
 
 class WindmillError(Exception):
@@ -175,6 +179,53 @@ class WindmillDetailedHealth:
     workers_alive: int | None
     pending_jobs: int | None
     running_jobs: int | None
+
+
+class RunnableKind(StrEnum):
+    """Kinds of Windmill runnables this integration can address."""
+
+    SCRIPT = "script"
+    FLOW = "flow"
+
+
+class AddressingMode(StrEnum):
+    """How a selected runnable is addressed at execution time."""
+
+    LATEST = "latest"
+    PINNED = "pinned"
+
+
+@dataclass(frozen=True, slots=True)
+class WindmillRunnable:
+    """Bounded discovery projection of one script or flow."""
+
+    kind: RunnableKind
+    path: str
+    summary: str
+
+
+@dataclass(frozen=True, slots=True)
+class RunnableParameter:
+    """Bounded projection of one input-schema parameter."""
+
+    name: str
+    type: str
+    required: bool
+    enum: tuple[str, ...] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RunnableDetails:
+    """Bounded detail projection used to decide addressing and argument support."""
+
+    kind: RunnableKind
+    path: str
+    summary: str
+    script_hash: str | None
+    flow_version: int | None
+    parameters: tuple[RunnableParameter, ...]
+    schema_supported: bool
+    schema_reason: str | None = None
 
 
 class JobState(StrEnum):
@@ -352,6 +403,18 @@ def normalize_base_url(value: str) -> str:
     display_host = f"[{host}]" if ":" in host else host
     netloc = display_host if port in {None, default_port} else f"{display_host}:{port}"
     return urlunsplit((scheme, netloc, path, "", ""))
+
+
+def normalize_runnable_path(value: str) -> str:
+    """Validate a Windmill runnable path before it is used to build a URL."""
+    if not isinstance(value, str):
+        raise WindmillRequestError("Runnable path is required")
+    path = value.strip().strip("/")
+    if not path or len(path) > MAX_TEXT_FIELD_LENGTH:
+        raise WindmillRequestError("Runnable path is invalid")
+    if RUNNABLE_PATH_RE.fullmatch(path) is None or ".." in path.split("/"):
+        raise WindmillRequestError("Runnable path is invalid")
+    return path
 
 
 def normalize_workspace(value: str) -> str:
@@ -924,6 +987,38 @@ class WindmillClient(WindmillInstanceClient):
         self._raise_for_status(response, not_found=WindmillNotFoundError)
         return self._parse_jobs(self._decode_json(response), page.per_page)
 
+    async def async_list_runnables(
+        self, kind: RunnableKind, page: PageRequest
+    ) -> tuple[WindmillRunnable, ...]:
+        """Return one bounded page of runnable scripts or flows."""
+        workspace = quote(self.workspace, safe="")
+        segment = "scripts" if kind is RunnableKind.SCRIPT else "flows"
+        response = await self._async_get(
+            f"/api/w/{workspace}/{segment}/list",
+            authenticated=True,
+            accept="application/json",
+            params=page.as_params(),
+        )
+        self._raise_for_status(response, not_found=WindmillNotFoundError)
+        return self._parse_runnables(kind, self._decode_json(response), page.per_page)
+
+    async def async_get_runnable(self, kind: RunnableKind, path: str) -> RunnableDetails:
+        """Read one runnable and project only safe addressing and schema metadata."""
+        workspace = quote(self.workspace, safe="")
+        safe_path = quote(normalize_runnable_path(path), safe="/")
+        endpoint = (
+            f"/api/w/{workspace}/scripts/get/p/{safe_path}"
+            if kind is RunnableKind.SCRIPT
+            else f"/api/w/{workspace}/flows/get/{safe_path}"
+        )
+        response = await self._async_get(
+            endpoint,
+            authenticated=True,
+            accept="application/json",
+        )
+        self._raise_for_status(response, not_found=WindmillNotFoundError)
+        return self._parse_runnable_details(kind, path, self._decode_json(response))
+
     async def _async_get_identity(self) -> WindmillIdentity:
         """Validate the token and workspace through the verified whoami endpoint."""
         workspace = quote(self.workspace, safe="")
@@ -989,6 +1084,100 @@ class WindmillClient(WindmillInstanceClient):
             CapabilityStatus.NOT_APPLICABLE,
             CapabilityReason.CONTEXT_REQUIRED,
         )
+
+    @staticmethod
+    def _parse_runnables(kind: RunnableKind, data: Any, limit: int) -> tuple[WindmillRunnable, ...]:
+        """Allowlist kind, path and summary, and drop rows that cannot be run."""
+        if not isinstance(data, list) or len(data) > limit:
+            raise WindmillProtocolError("Windmill returned an invalid runnable list")
+        runnables: list[WindmillRunnable] = []
+        for row in data:
+            if not isinstance(row, dict):
+                raise WindmillProtocolError("Windmill returned an invalid runnable")
+            raw_path = row.get("path")
+            if not _is_bounded_text(raw_path):
+                raise WindmillProtocolError("Windmill returned an invalid runnable path")
+            if row.get("archived") is True or row.get("draft_only") is True:
+                continue
+            try:
+                path = normalize_runnable_path(raw_path)
+            except WindmillRequestError:
+                continue
+            summary = row.get("summary")
+            runnables.append(
+                WindmillRunnable(
+                    kind=kind,
+                    path=path,
+                    summary=summary.strip() if _is_bounded_text(summary) else "",
+                )
+            )
+        return tuple(runnables)
+
+    @classmethod
+    def _parse_runnable_details(cls, kind: RunnableKind, path: str, data: Any) -> RunnableDetails:
+        """Allowlist addressing metadata and project the input schema safely."""
+        if not isinstance(data, dict):
+            raise WindmillProtocolError("Windmill returned an invalid runnable")
+        summary = data.get("summary")
+        script_hash = data.get("hash") if kind is RunnableKind.SCRIPT else None
+        if script_hash is not None and not _is_bounded_text(str(script_hash)):
+            raise WindmillProtocolError("Windmill returned an invalid script hash")
+        raw_version = data.get("version") if kind is RunnableKind.FLOW else None
+        flow_version = raw_version if _is_count(raw_version) else None
+        parameters, supported, reason = cls._project_schema(data.get("schema"))
+        return RunnableDetails(
+            kind=kind,
+            path=normalize_runnable_path(path),
+            summary=summary.strip() if _is_bounded_text(summary) else "",
+            script_hash=None if script_hash is None else str(script_hash),
+            flow_version=flow_version,
+            parameters=parameters,
+            schema_supported=supported,
+            schema_reason=reason,
+        )
+
+    @staticmethod
+    def _project_schema(schema: Any) -> tuple[tuple[RunnableParameter, ...], bool, str | None]:
+        """Keep parameter name, type, required flag and bounded enum values only."""
+        if schema is None:
+            return ((), True, None)
+        if not isinstance(schema, dict):
+            return ((), False, "invalid_schema")
+        properties = schema.get("properties", {})
+        required = schema.get("required", [])
+        if not isinstance(properties, dict) or not isinstance(required, list):
+            return ((), False, "invalid_schema")
+        if len(properties) > MAX_RUNNABLE_PARAMETERS:
+            return ((), False, "too_many_parameters")
+
+        parameters: list[RunnableParameter] = []
+        supported = True
+        reason: str | None = None
+        for name, definition in properties.items():
+            if not _is_bounded_text(name) or not isinstance(definition, dict):
+                return ((), False, "invalid_schema")
+            declared = definition.get("type")
+            if declared not in SUPPORTED_PARAMETER_TYPES:
+                supported = False
+                reason = "unsupported_parameter_type"
+                declared = "unknown"
+            values = definition.get("enum")
+            enum: tuple[str, ...] | None = None
+            if isinstance(values, list) and values:
+                if len(values) > MAX_ENUM_VALUES or not all(_is_bounded_text(v) for v in values):
+                    supported = False
+                    reason = reason or "unsupported_enum"
+                else:
+                    enum = tuple(str(value) for value in values)
+            parameters.append(
+                RunnableParameter(
+                    name=name,
+                    type=str(declared),
+                    required=name in required,
+                    enum=enum,
+                )
+            )
+        return (tuple(parameters), supported, reason)
 
     @classmethod
     def _parse_jobs(cls, data: Any, limit: int) -> tuple[WindmillJob, ...]:

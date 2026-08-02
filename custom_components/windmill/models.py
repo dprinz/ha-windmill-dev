@@ -13,6 +13,7 @@ from .coordinator import (
     WindmillCapabilityCoordinator,
     WindmillHealthCoordinator,
     WindmillRunCoordinator,
+    WindmillRunnableCoordinator,
     WindmillWorkerCoordinator,
 )
 
@@ -27,6 +28,7 @@ class WindmillRuntimeData:
     health_coordinator: WindmillHealthCoordinator | None = None
     worker_coordinator: WindmillWorkerCoordinator | None = None
     run_coordinator: WindmillRunCoordinator | None = None
+    runnable_coordinator: WindmillRunnableCoordinator | None = None
 
     @property
     def identity(self) -> WindmillIdentity:

@@ -145,6 +145,13 @@
   "options": {
     "step": {
       "init": {
+        "title": "Windmill options",
+        "menu_options": {
+          "features": "Features",
+          "runnables": "Scripts and flows"
+        }
+      },
+      "features": {
         "title": "Windmill features",
         "description": "Enable only the features you need. Changes reload the integration.",
         "data": {
@@ -161,7 +168,21 @@
           "worker_details": "High cardinality: adds one entity per worker instance and is meant for self-hosted operators.",
           "update_entity": "Self-hosted only. Managed Windmill Cloud deployments are updated by Windmill."
         }
+      },
+      "runnables": {
+        "title": "Select scripts and flows",
+        "description": "Only the runnables you select here can ever be exposed by Home Assistant. Discovery is bounded, so very large workspaces may not list every runnable.",
+        "data": {
+          "runnables": "Selected scripts and flows",
+          "pin_selected": "Pin newly selected runnables to their current version"
+        },
+        "data_description": {
+          "pin_selected": "Pinned scripts keep their current hash and pinned flows their current version. Runnables you already selected keep their existing mode."
+        }
       }
+    },
+    "error": {
+      "too_many_runnables": "Select fewer runnables."
     }
   }
 }

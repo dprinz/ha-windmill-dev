@@ -13,6 +13,8 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from custom_components.windmill.api import (
     JobState,
     PageRequest,
+    RunnableKind,
+    RunnableParameter,
     WindmillAuthenticationError,
     WindmillAuthorizationError,
     WindmillClient,
@@ -25,6 +27,7 @@ from custom_components.windmill.api import (
     WindmillProtocolError,
     WindmillRateLimitError,
     WindmillRequestError,
+    WindmillRunnable,
     WindmillServerError,
     WindmillTimeoutError,
     WindmillUrlError,
@@ -32,6 +35,7 @@ from custom_components.windmill.api import (
     WindmillWorkspaceError,
     WindmillWorkspaceInfo,
     normalize_base_url,
+    normalize_runnable_path,
     normalize_workspace,
 )
 from custom_components.windmill.const import MAX_RESPONSE_BYTES
@@ -884,3 +888,146 @@ async def test_job_listing_status_mapping(
 
     with pytest.raises(exception_type):
         await client.async_list_jobs(PageRequest(page=1, per_page=2))
+
+
+SCRIPTS_URL = f"{BASE_URL}/api/w/{WORKSPACE}/scripts/list?page=1&per_page=2"
+FLOWS_URL = f"{BASE_URL}/api/w/{WORKSPACE}/flows/list?page=1&per_page=2"
+SCRIPT_DETAIL_URL = f"{BASE_URL}/api/w/{WORKSPACE}/scripts/get/p/u/automation/lights"
+FLOW_DETAIL_URL = f"{BASE_URL}/api/w/{WORKSPACE}/flows/get/f/home/night"
+SCRIPT_ROW = {
+    "path": "u/automation/lights",
+    "summary": "Toggle the lights",
+    "hash": "0123456789abcdef",
+    "archived": False,
+    "language": "python3",
+    "extra_perms": {"u/admin": True},
+}
+SCRIPT_DETAIL = {
+    **SCRIPT_ROW,
+    "content": "must-not-be-retained",
+    "lock": "must-not-be-retained",
+    "schema": {
+        "type": "object",
+        "properties": {
+            "room": {"type": "string", "enum": ["kitchen", "hall"], "default": "kitchen"},
+            "bright": {"type": "boolean", "description": "must-not-be-retained"},
+        },
+        "required": ["room"],
+    },
+}
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["", "/", "..", "u/../admin", "u/a b/c", "u/a\\x00/c", "u//c", "x" * 300],
+)
+def test_runnable_paths_are_validated(value: str) -> None:
+    """Unsafe runnable paths are rejected before a URL is built."""
+    with pytest.raises(WindmillRequestError):
+        normalize_runnable_path(value)
+
+    assert normalize_runnable_path(" u/automation/lights/ ") == "u/automation/lights"
+
+
+async def test_runnable_listing_projects_safe_metadata(
+    hass: HomeAssistant, aioclient_mock: object
+) -> None:
+    """Listing keeps kind, path and summary and drops archived or draft rows."""
+    aioclient_mock.get(  # type: ignore[attr-defined]
+        SCRIPTS_URL,
+        json=[
+            SCRIPT_ROW,
+            {**SCRIPT_ROW, "path": "u/old/script", "archived": True},
+        ],
+        headers=JSON_HEADERS,
+    )
+    aioclient_mock.get(  # type: ignore[attr-defined]
+        FLOWS_URL,
+        json=[{"path": "f/home/night", "summary": "", "draft_only": True}],
+        headers=JSON_HEADERS,
+    )
+    client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
+
+    scripts = await client.async_list_runnables(RunnableKind.SCRIPT, PageRequest(1, 2))
+    flows = await client.async_list_runnables(RunnableKind.FLOW, PageRequest(1, 2))
+
+    assert scripts == (
+        WindmillRunnable(
+            kind=RunnableKind.SCRIPT, path="u/automation/lights", summary="Toggle the lights"
+        ),
+    )
+    assert flows == ()
+    assert "u/admin" not in repr(scripts)
+
+
+async def test_runnable_details_project_schema_safely(
+    hass: HomeAssistant, aioclient_mock: object
+) -> None:
+    """Details keep the hash and a bounded parameter projection only."""
+    aioclient_mock.get(SCRIPT_DETAIL_URL, json=SCRIPT_DETAIL, headers=JSON_HEADERS)  # type: ignore[attr-defined]
+    client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
+
+    details = await client.async_get_runnable(RunnableKind.SCRIPT, "u/automation/lights")
+
+    assert details.script_hash == "0123456789abcdef"
+    assert details.schema_supported is True
+    assert details.parameters == (
+        RunnableParameter(name="room", type="string", required=True, enum=("kitchen", "hall")),
+        RunnableParameter(name="bright", type="boolean", required=False),
+    )
+    assert "must-not-be-retained" not in repr(details)
+
+
+async def test_flow_details_use_version_when_present(
+    hass: HomeAssistant, aioclient_mock: object
+) -> None:
+    """A flow keeps its numeric version when the deployment exposes one."""
+    aioclient_mock.get(  # type: ignore[attr-defined]
+        FLOW_DETAIL_URL,
+        json={"path": "f/home/night", "summary": "Night", "version": 7, "schema": None},
+        headers=JSON_HEADERS,
+    )
+    client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
+
+    details = await client.async_get_runnable(RunnableKind.FLOW, "f/home/night")
+
+    assert details.flow_version == 7
+    assert details.script_hash is None
+    assert details.schema_supported is True
+
+
+@pytest.mark.parametrize(
+    ("schema", "reason"),
+    [
+        ("not-a-schema", "invalid_schema"),
+        ({"type": "object", "properties": []}, "invalid_schema"),
+        ({"type": "object", "properties": {"a": {"$ref": "#/x"}}}, "unsupported_parameter_type"),
+        ({"type": "object", "properties": {"a": {"type": "null"}}}, "unsupported_parameter_type"),
+        (
+            {"type": "object", "properties": {"a": {"type": "string", "enum": [1, 2]}}},
+            "unsupported_enum",
+        ),
+        (
+            {
+                "type": "object",
+                "properties": {f"p{i}": {"type": "string"} for i in range(51)},
+            },
+            "too_many_parameters",
+        ),
+    ],
+)
+async def test_unsupported_schemas_are_flagged(
+    hass: HomeAssistant, aioclient_mock: object, schema: object, reason: str
+) -> None:
+    """An unsupported argument schema is reported before execution is enabled."""
+    aioclient_mock.get(  # type: ignore[attr-defined]
+        SCRIPT_DETAIL_URL,
+        json={**SCRIPT_DETAIL, "schema": schema},
+        headers=JSON_HEADERS,
+    )
+    client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
+
+    details = await client.async_get_runnable(RunnableKind.SCRIPT, "u/automation/lights")
+
+    assert details.schema_supported is False
+    assert details.schema_reason == reason

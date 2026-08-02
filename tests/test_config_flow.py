@@ -677,8 +677,12 @@ async def test_options_flow_updates_features_and_reloads(hass: HomeAssistant) ->
     with patched_client() as mocks:
         result = await hass.config_entries.options.async_init(entry.entry_id)
 
+        assert result["type"] is FlowResultType.MENU
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "features"}
+        )
         assert result["type"] is FlowResultType.FORM
-        assert result["step_id"] == "init"
+        assert result["step_id"] == "features"
         defaults = {
             marker.schema: marker.default()
             for marker in result["data_schema"].schema
@@ -723,6 +727,9 @@ async def test_options_flow_defaults_for_legacy_entry(hass: HomeAssistant) -> No
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
         result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "features"}
+        )
 
     defaults = {
         marker.schema: marker.default()

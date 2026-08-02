@@ -36,6 +36,7 @@ from .const import (
     OPT_DETAILED_HEALTH,
     OPT_INSTANCE_HEALTH,
     OPT_RUN_OBSERVATION,
+    OPT_RUNNABLES,
     OPT_WORKER_DETAILS,
     OPT_WORKER_GROUPS,
 )
@@ -45,7 +46,9 @@ from .coordinator import (
     WindmillCapabilityCoordinator,
     WindmillHealthCoordinator,
     WindmillRunCoordinator,
+    WindmillRunnableCoordinator,
     WindmillWorkerCoordinator,
+    load_selections,
 )
 from .models import WindmillRuntimeData
 
@@ -128,6 +131,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: WindmillConfigEntry) -> 
         )
         await run_coordinator.async_config_entry_first_refresh()
 
+    runnable_coordinator: WindmillRunnableCoordinator | None = None
+    selections = load_selections(entry.options.get(OPT_RUNNABLES))
+    if selections and (
+        _supported(capabilities.script_discovery) or _supported(capabilities.flow_discovery)
+    ):
+        runnable_coordinator = WindmillRunnableCoordinator(hass, entry, client, selections)
+        await runnable_coordinator.async_config_entry_first_refresh()
+
     entry.runtime_data = WindmillRuntimeData(
         client=client,
         connection=connection,
@@ -135,6 +146,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WindmillConfigEntry) -> 
         health_coordinator=health_coordinator,
         worker_coordinator=worker_coordinator,
         run_coordinator=run_coordinator,
+        runnable_coordinator=runnable_coordinator,
     )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True

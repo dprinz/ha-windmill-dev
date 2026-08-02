@@ -22,6 +22,7 @@ from homeassistant.helpers.selector import (
 )
 
 from .api import (
+    AddressingMode,
     CapabilityAvailability,
     CapabilityMatrix,
     CapabilityStatus,
@@ -36,6 +37,7 @@ from .api import (
     WindmillProtocolError,
     WindmillRateLimitError,
     WindmillRequestError,
+    WindmillRunnable,
     WindmillServerError,
     WindmillUrlError,
     WindmillWorkspaceError,
@@ -48,14 +50,55 @@ from .const import (
     DOMAIN,
     FEATURE_DEFAULTS,
     FEATURE_OPTIONS,
+    MAX_SELECTED_RUNNABLES,
     OPT_DETAILED_HEALTH,
     OPT_INSTANCE_HEALTH,
     OPT_RUN_OBSERVATION,
+    OPT_RUNNABLES,
     OPT_UPDATE_ENTITY,
     OPT_WORKER_DETAILS,
 )
+from .coordinator import RunnableSelection, async_discover_runnables, load_selections
 
 TOKEN_SELECTOR = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
+CONF_PIN = "pin_selected"
+SELECTION_SEPARATOR = ":"
+
+
+def _selection_value(kind: str, path: str) -> str:
+    """Return the stable form value of one runnable selection."""
+    return f"{kind}{SELECTION_SEPARATOR}{path}"
+
+
+def _selection_label(kind: str, path: str, summary: str) -> str:
+    """Return a readable label without exposing anything beyond discovery metadata."""
+    return f"{kind}: {path} - {summary}" if summary else f"{kind}: {path}"
+
+
+def _merge_selections(
+    selected: list[str], stored: tuple[RunnableSelection, ...], pin: bool
+) -> list[dict[str, str]]:
+    """Keep the addressing mode of known runnables and apply the pin choice to new ones."""
+    known = {selection.key: selection for selection in stored}
+    merged: list[dict[str, str]] = []
+    for value in selected:
+        kind, separator, path = value.partition(SELECTION_SEPARATOR)
+        if not separator:
+            continue
+        existing = known.get((kind, path))
+        if existing is not None:
+            merged.append(existing.as_dict())
+            continue
+        selection = RunnableSelection.from_dict(
+            {
+                "kind": kind,
+                "path": path,
+                "mode": AddressingMode.PINNED.value if pin else AddressingMode.LATEST.value,
+            }
+        )
+        if selection is not None:
+            merged.append(selection.as_dict())
+    return merged
 
 
 def _map_client_error(err: WindmillError) -> tuple[str, str]:
@@ -426,15 +469,91 @@ class WindmillConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class WindmillOptionsFlow(OptionsFlowWithReload):
-    """Adjust opt-in features without touching immutable identity."""
+    """Adjust opt-in features and runnable selection without touching identity."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Offer the two independent option areas."""
+        return self.async_show_menu(step_id="init", menu_options=["features", "runnables"])
+
+    async def async_step_features(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         """Show and store the feature selection of an existing entry."""
         if user_input is not None:
-            return self.async_create_entry(data=_selected_features(user_input))
+            return self._async_save({**_selected_features(user_input)})
 
         current = {
             key: bool(self.config_entry.options.get(key, FEATURE_DEFAULTS[key]))
             for key in FEATURE_OPTIONS
         }
-        return self.async_show_form(step_id="init", data_schema=_feature_schema(current))
+        return self.async_show_form(step_id="features", data_schema=_feature_schema(current))
+
+    async def async_step_runnables(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Let the user choose exactly which scripts and flows are exposed."""
+        stored = load_selections(self.config_entry.options.get(OPT_RUNNABLES))
+        if user_input is not None:
+            selected = user_input.get(OPT_RUNNABLES, [])
+            if len(selected) > MAX_SELECTED_RUNNABLES:
+                return self.async_show_form(
+                    step_id="runnables",
+                    data_schema=self._runnable_schema(await self._async_discover(), stored),
+                    errors={OPT_RUNNABLES: "too_many_runnables"},
+                )
+            return self._async_save(
+                {OPT_RUNNABLES: _merge_selections(selected, stored, bool(user_input.get(CONF_PIN)))}
+            )
+
+        return self.async_show_form(
+            step_id="runnables",
+            data_schema=self._runnable_schema(await self._async_discover(), stored),
+        )
+
+    async def _async_discover(self) -> tuple[WindmillRunnable, ...]:
+        """Discover selectable runnables through the entry's runtime client."""
+        runtime = getattr(self.config_entry, "runtime_data", None)
+        if runtime is None:
+            return ()
+        return await async_discover_runnables(runtime.client)
+
+    def _runnable_schema(
+        self, discovered: tuple[WindmillRunnable, ...], stored: tuple[RunnableSelection, ...]
+    ) -> vol.Schema:
+        """Build a bounded multi-select that keeps unavailable selections visible."""
+        options = {
+            _selection_value(runnable.kind.value, runnable.path): _selection_label(
+                runnable.kind.value, runnable.path, runnable.summary
+            )
+            for runnable in discovered
+        }
+        for selection in stored:
+            value = _selection_value(selection.kind.value, selection.path)
+            options.setdefault(value, _selection_label(selection.kind.value, selection.path, ""))
+        return vol.Schema(
+            {
+                vol.Optional(
+                    OPT_RUNNABLES,
+                    default=[
+                        _selection_value(selection.kind.value, selection.path)
+                        for selection in stored
+                    ],
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=[
+                            SelectOptionDict(value=value, label=label)
+                            for value, label in sorted(options.items())
+                        ],
+                        mode=SelectSelectorMode.DROPDOWN,
+                        multiple=True,
+                        sort=True,
+                    )
+                ),
+                vol.Optional(CONF_PIN, default=False): BooleanSelector(),
+            }
+        )
+
+    @callback
+    def _async_save(self, updates: dict[str, Any]) -> ConfigFlowResult:
+        """Store one option area without discarding the other."""
+        return self.async_create_entry(data={**self.config_entry.options, **updates})
