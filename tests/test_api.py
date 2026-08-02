@@ -1110,3 +1110,58 @@ async def test_execution_rejects_unsafe_paths(hass: HomeAssistant) -> None:
 
     with pytest.raises(WindmillRequestError):
         await client.async_run_runnable(RunnableKind.SCRIPT, "u/../admin", {})
+
+
+UPTODATE_URL = f"{BASE_URL}/api/uptodate"
+
+
+@pytest.mark.parametrize(
+    ("text", "installed", "latest", "up_to_date"),
+    [
+        ("yes", None, None, True),
+        ("Update: 1.775.2 -> 1.780.0", "1.775.2", "1.780.0", False),
+        ("Update: 1.775.2 -> 1.775.2", "1.775.2", "1.775.2", True),
+        ("Update: dev -> 1.780.0-rc.1", "dev", "1.780.0-rc.1", False),
+    ],
+)
+async def test_update_status_parsing(
+    hass: HomeAssistant,
+    aioclient_mock: object,
+    text: str,
+    installed: str | None,
+    latest: str | None,
+    up_to_date: bool,
+) -> None:
+    """Up-to-date, outdated and development builds are all parsed defensively."""
+    aioclient_mock.get(UPTODATE_URL, text=text, headers=TEXT_HEADERS)  # type: ignore[attr-defined]
+    client = WindmillInstanceClient(async_get_clientsession(hass), BASE_URL, TOKEN)
+
+    status = await client.async_get_update_status()
+
+    assert status.installed_version == installed
+    assert status.latest_version == latest
+    assert status.up_to_date is up_to_date
+    assert "Authorization" not in aioclient_mock.mock_calls[0][3]  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize("text", ["no", "Update: 1.775.2", "", "x" * 300])
+async def test_update_status_rejects_unparseable_text(
+    hass: HomeAssistant, aioclient_mock: object, text: str
+) -> None:
+    """Unparseable update text fails closed instead of inventing a version."""
+    aioclient_mock.get(UPTODATE_URL, text=text, headers=TEXT_HEADERS)  # type: ignore[attr-defined]
+    client = WindmillInstanceClient(async_get_clientsession(hass), BASE_URL, TOKEN)
+
+    with pytest.raises(WindmillProtocolError):
+        await client.async_get_update_status()
+
+
+async def test_update_status_maps_a_missing_endpoint(
+    hass: HomeAssistant, aioclient_mock: object
+) -> None:
+    """An old deployment without the endpoint is reported as not found."""
+    aioclient_mock.get(UPTODATE_URL, status=HTTPStatus.NOT_FOUND)  # type: ignore[attr-defined]
+    client = WindmillInstanceClient(async_get_clientsession(hass), BASE_URL, TOKEN)
+
+    with pytest.raises(WindmillNotFoundError):
+        await client.async_get_update_status()

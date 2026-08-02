@@ -75,6 +75,7 @@ def _capabilities(
     runs: CapabilityAvailability = AVAILABLE,
     script_discovery: CapabilityAvailability = AVAILABLE,
     flow_discovery: CapabilityAvailability = AVAILABLE,
+    update_visibility: CapabilityAvailability = AVAILABLE,
 ) -> CapabilityMatrix:
     """Build a capability matrix with the capabilities under test."""
     return CapabilityMatrix(
@@ -87,7 +88,7 @@ def _capabilities(
         script_execution=CONTEXT_REQUIRED,
         flow_execution=CONTEXT_REQUIRED,
         cancellation=CONTEXT_REQUIRED,
-        update_visibility=AVAILABLE,
+        update_visibility=update_visibility,
     )
 
 

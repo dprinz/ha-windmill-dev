@@ -147,6 +147,11 @@
       "run_runnable": {
         "name": "Run {path}"
       }
+    },
+    "update": {
+      "server": {
+        "name": "Windmill server"
+      }
     }
   },
   "options": {

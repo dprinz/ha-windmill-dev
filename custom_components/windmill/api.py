@@ -25,6 +25,10 @@ MAX_WORKER_GROUP_ROWS = 200
 MAX_TEXT_FIELD_LENGTH = 256
 ALIVE_WORKER_SECONDS = 300
 CANCELLATION_REASON = "Canceled from Home Assistant"
+UPDATE_TEXT_RE = re.compile(r"Update:\s+(?P<installed>\S+)\s+->\s+(?P<latest>\S+)")
+VERSION_RE = re.compile(r"v?\d+(?:\.\d+){0,3}(?:[-+][A-Za-z0-9.-]{1,32})?")
+MANAGED_CLOUD_HOST = "windmill.dev"
+RELEASE_URL_TEMPLATE = "https://github.com/windmill-labs/windmill/releases/tag/v{version}"
 MAX_RUNNABLE_PARAMETERS = 50
 MAX_ENUM_VALUES = 20
 RUNNABLE_PATH_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.\-]*(?:/[A-Za-z0-9_][A-Za-z0-9_.\-]*)*")
@@ -180,6 +184,15 @@ class WindmillDetailedHealth:
     workers_alive: int | None
     pending_jobs: int | None
     running_jobs: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class WindmillUpdateStatus:
+    """Bounded projection of the best-effort update check."""
+
+    installed_version: str | None
+    latest_version: str | None
+    up_to_date: bool
 
 
 class RunnableKind(StrEnum):
@@ -406,6 +419,19 @@ def normalize_base_url(value: str) -> str:
     return urlunsplit((scheme, netloc, path, "", ""))
 
 
+def is_managed_cloud(base_url: str) -> bool:
+    """Return whether a base URL points at the managed Windmill Cloud deployment."""
+    host = urlsplit(base_url).hostname or ""
+    return host == MANAGED_CLOUD_HOST or host.endswith(f".{MANAGED_CLOUD_HOST}")
+
+
+def release_url(version: str | None) -> str | None:
+    """Return a release URL only for a version string that is safe to interpolate."""
+    if version is None or VERSION_RE.fullmatch(version) is None:
+        return None
+    return RELEASE_URL_TEMPLATE.format(version=version.removeprefix("v"))
+
+
 def normalize_runnable_path(value: str) -> str:
     """Validate a Windmill runnable path before it is used to build a URL."""
     if not isinstance(value, str):
@@ -541,6 +567,40 @@ class WindmillInstanceClient:
         )
         self._raise_for_status(response, not_found=WindmillNotFoundError)
         return self._parse_worker_groups(self._decode_json(response))
+
+    async def async_get_update_status(self) -> WindmillUpdateStatus:
+        """Return the bounded best-effort update check of a self-hosted deployment."""
+        response = await self._async_get(
+            "/api/uptodate",
+            authenticated=False,
+            accept="text/plain",
+        )
+        self._raise_for_status(
+            response,
+            not_found=WindmillNotFoundError,
+            authentication_required=False,
+        )
+        self._require_content_type(response, "text/plain")
+        try:
+            value = response.payload.decode("utf-8").strip()
+        except UnicodeDecodeError as err:
+            raise WindmillProtocolError("Windmill returned an invalid update status") from err
+        if value == "yes":
+            return WindmillUpdateStatus(
+                installed_version=None, latest_version=None, up_to_date=True
+            )
+        match = UPDATE_TEXT_RE.fullmatch(value)
+        if match is None:
+            raise WindmillProtocolError("Windmill returned an invalid update status")
+        installed = match.group("installed")
+        latest = match.group("latest")
+        if len(installed) > 128 or len(latest) > 128:
+            raise WindmillProtocolError("Windmill returned an invalid update status")
+        return WindmillUpdateStatus(
+            installed_version=installed,
+            latest_version=latest,
+            up_to_date=installed == latest,
+        )
 
     async def _probe_update_visibility(self) -> CapabilityAvailability:
         """Probe only the bounded update-check contract, not deployment eligibility."""

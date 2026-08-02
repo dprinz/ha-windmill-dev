@@ -33,6 +33,7 @@ from .api import (
     WindmillNotFoundError,
     WindmillRequestError,
     WindmillRunnable,
+    WindmillUpdateStatus,
     WindmillWorker,
     normalize_runnable_path,
 )
@@ -53,6 +54,7 @@ JOB_STORAGE_VERSION = 1
 RUNNABLE_UPDATE_INTERVAL = timedelta(minutes=30)
 RUNNABLE_PAGE_SIZE = 100
 MAX_RUNNABLE_PAGES = 3
+UPDATE_CHECK_INTERVAL = timedelta(hours=6)
 
 
 @dataclass
@@ -605,3 +607,36 @@ class StartedJobRegistry:
     async def _async_save(self) -> None:
         """Persist the bounded registry."""
         await self._store.async_save({"jobs": [job.as_dict() for job in self.tracked]})
+
+
+class WindmillUpdateCoordinator(DataUpdateCoordinator[WindmillUpdateStatus | None]):
+    """Poll the best-effort update check without blocking health updates."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry[Any],
+        client: WindmillClient,
+    ) -> None:
+        """Initialize the config-entry-owned update coordinator."""
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=f"{DOMAIN} update",
+            config_entry=entry,
+            update_interval=UPDATE_CHECK_INTERVAL,
+        )
+        self.client = client
+
+    async def _async_update_data(self) -> WindmillUpdateStatus:
+        """Refresh the best-effort update check.
+
+        The data type is optional because the first refresh may fail without failing setup:
+        the upstream check depends on GitHub availability.
+        """
+        try:
+            return await self.client.async_get_update_status()
+        except WindmillAuthenticationError as err:
+            raise ConfigEntryAuthFailed("Windmill authentication failed") from err
+        except WindmillError as err:
+            raise UpdateFailed("Unable to refresh the Windmill update check") from err

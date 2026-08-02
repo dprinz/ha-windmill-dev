@@ -1,9 +1,9 @@
-# Agent handoff after WMHA-0010
+# Agent handoff after WMHA-0011
 
 - Handoff date: 2026-08-02
-- Repository state: `main` at `283be2e`, pushed to `origin/main`
-- Next ticket: `WMHA-0011` (still in `tickets/backlog/`; not activated)
-- Last completed ticket: `WMHA-0010`
+- Repository state: `main` at the WMHA-0011 commit, pushed to `origin/main`
+- Next ticket: `WMHA-0012` (still in `tickets/backlog/`; not activated)
+- Last completed ticket: `WMHA-0011`
 - Supersedes: `docs/development/handoff-after-WMHA-0003.md`
 
 ## Start here
@@ -12,14 +12,14 @@ Read these files in order before changing anything:
 
 1. `AGENTS.md`
 2. `docs/context-map.md`
-3. `tickets/backlog/WMHA-0011-update-entity.md`
+3. `tickets/backlog/WMHA-0012-diagnostics-repairs-resilience.md`
 4. `docs/product/requirements.md`
 5. `docs/architecture/decisions/0001-capability-negotiation.md`
 6. `docs/research/windmill-api-contract.md`
 7. The directly affected source and test files named below
 
-There is intentionally no active ticket. Activate WMHA-0011 according to `AGENTS.md` and create
-`plans/WMHA-0011.md` before implementing.
+There is intentionally no active ticket. Activate WMHA-0012 according to `AGENTS.md` and create
+`plans/WMHA-0012.md` before implementing.
 
 ## Completed since the previous handoff
 
@@ -32,8 +32,9 @@ There is intentionally no active ticket. Activate WMHA-0011 according to `AGENTS
 | WMHA-0008 | `e9b4117` | Explicit runnable discovery and selection |
 | WMHA-0009 | `31ab879` | `windmill.run` action and opt-in runnable buttons |
 | WMHA-0010 | `283be2e` | Bounded started-job registry and `windmill.cancel` action |
+| WMHA-0011 | see `git log` | Read-only update entity for eligible self-hosted deployments |
 
-The full suite is 317 tests at 97.12% coverage. Ruff, formatting, mypy, `uv lock --check`,
+The full suite is 346 tests at 96.95% coverage. Ruff, formatting, mypy, `uv lock --check`,
 `scripts/validate_repository.py` and `git diff --check` pass.
 
 ## Current code map
@@ -45,7 +46,7 @@ The full suite is 317 tests at 97.12% coverage. Ruff, formatting, mypy, `uv lock
 | Coordinators and state | `custom_components/windmill/coordinator.py` | Capability, health, worker, run and runnable coordinators plus the run retention model and the started-job registry |
 | Flows | `custom_components/windmill/config_flow.py` | Four onboarding steps, reauth, reconfigure, and an options menu with feature and runnable steps |
 | Actions | `custom_components/windmill/services.py` | `windmill.run` and `windmill.cancel`, both gated on explicit selection or local tracking |
-| Entities | `sensor.py`, `binary_sensor.py`, `event.py`, `button.py`, `entity.py` | One service device per entry, translation-key naming, no entity per job or worker process |
+| Entities | `sensor.py`, `binary_sensor.py`, `event.py`, `button.py`, `update.py`, `entity.py` | One service device per entry, translation-key naming, no entity per job or worker process |
 | Tests | `tests/test_*.py` | Every feature is exercised through Home Assistant public interfaces |
 
 ## Invariants that later tickets must not break
@@ -68,8 +69,9 @@ The full suite is 317 tests at 97.12% coverage. Ruff, formatting, mypy, `uv lock
 - Restricted-token onboarding, detailed-health token variants, Cloud tenant health and worker
   behavior, hash and version execution enforcement, and cancellation authorization are all still
   untested against a live instance. They remain recorded in `docs/research/windmill-api-contract.md`.
-- `update_visibility=available` still proves only the endpoint contract. WMHA-0011 must establish
-  Cloud versus self-host deployment eligibility before exposing an update entity.
+- Deployment eligibility for the update entity is resolved: opt-in plus successful capability probe
+  plus a non-Cloud host. A Cloud tenant behind a custom domain is still undetectable, so the opt-in
+  default of disabled is load-bearing. Live `/api/uptodate` behavior remains untested.
 - Translations are English only; WMHA-0013 owns German and the user documentation. Capability status
   tokens in the onboarding capability step are not translated yet.
 - WMHA-0017 is a new backlog ticket for run-observation scope selection, which needs the selection
@@ -78,7 +80,7 @@ The full suite is 317 tests at 97.12% coverage. Ruff, formatting, mypy, `uv lock
 ## Process deviation to correct
 
 `AGENTS.md` requires an independent review for medium- and high-risk work. WMHA-0004 through
-WMHA-0010 were reviewed only by a separate review pass inside the implementing session, because the
+WMHA-0011 were reviewed only by a separate review pass inside the implementing session, because the
 session was not permitted to spawn a reviewing agent. Each ticket records this deviation in its
 review evidence. A fresh session should re-review at least the high-risk tickets WMHA-0006,
 WMHA-0007, WMHA-0009 and WMHA-0010 before the WMHA-0015 release gate.

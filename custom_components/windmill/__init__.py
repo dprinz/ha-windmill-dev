@@ -26,6 +26,7 @@ from .api import (
     WindmillServerError,
     WindmillUrlError,
     WindmillWorkspaceError,
+    is_managed_cloud,
 )
 from .const import (
     CONF_BASE_URL,
@@ -37,6 +38,7 @@ from .const import (
     OPT_INSTANCE_HEALTH,
     OPT_RUN_OBSERVATION,
     OPT_RUNNABLES,
+    OPT_UPDATE_ENTITY,
     OPT_WORKER_DETAILS,
     OPT_WORKER_GROUPS,
 )
@@ -49,6 +51,7 @@ from .coordinator import (
     WindmillHealthCoordinator,
     WindmillRunCoordinator,
     WindmillRunnableCoordinator,
+    WindmillUpdateCoordinator,
     WindmillWorkerCoordinator,
     load_selections,
 )
@@ -59,7 +62,13 @@ _LOGGER = logging.getLogger(__name__)
 
 type WindmillConfigEntry = ConfigEntry[WindmillRuntimeData]
 
-PLATFORMS = [Platform.BINARY_SENSOR, Platform.BUTTON, Platform.EVENT, Platform.SENSOR]
+PLATFORMS = [
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
+    Platform.EVENT,
+    Platform.SENSOR,
+    Platform.UPDATE,
+]
 
 
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
@@ -143,6 +152,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: WindmillConfigEntry) -> 
         runnable_coordinator = WindmillRunnableCoordinator(hass, entry, client, selections)
         await runnable_coordinator.async_config_entry_first_refresh()
 
+    update_coordinator: WindmillUpdateCoordinator | None = None
+    if (
+        _feature_enabled(entry, OPT_UPDATE_ENTITY)
+        and _supported(capabilities.update_visibility)
+        and not is_managed_cloud(client.base_url)
+    ):
+        update_coordinator = WindmillUpdateCoordinator(hass, entry, client)
+        # The upstream check depends on GitHub, so a failure must not fail setup.
+        await update_coordinator.async_refresh()
+
     job_store: Store[dict[str, Any]] = Store(
         hass, JOB_STORAGE_VERSION, f"{DOMAIN}.jobs.{entry.entry_id}"
     )
@@ -158,6 +177,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WindmillConfigEntry) -> 
         run_coordinator=run_coordinator,
         runnable_coordinator=runnable_coordinator,
         started_jobs=started_jobs,
+        update_coordinator=update_coordinator,
     )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
