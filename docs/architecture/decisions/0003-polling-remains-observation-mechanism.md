@@ -112,3 +112,21 @@ evidence; the evidence supports deferral.
   or load problems.
 - Home Assistant introduces an authenticated, replay-resistant inbound webhook primitive.
 - Windmill Cloud documents a tenant-safe push channel.
+
+## Re-confirmations
+
+- **2026-08-02 (WMHA-0029): re-confirmed against successor release v1.776.0** (published
+  2026-08-01, the only release after the pinned v1.775.2 at check time). The v1.776.0 OpenAPI
+  (raw file at the release tag, grepped directly) still contains exactly 10 `text/event-stream`
+  occurrences in the same three execution-scoped families (`getupdate_sse`, `run_and_stream`,
+  `batch_rerun_jobs`); no workspace-wide job lifecycle stream was added. New paths are dbt
+  runtime support and per-job polled `run_progress`/`dbt_graph` JSON endpoints — execution-scoped,
+  not observation streams. The workspace webhook configuration remains a bare URL with no
+  signature/secret field, and the rolling webhooks documentation still lists resource lifecycle
+  and token events only — no job events. The v1.776.0 release notes mention no job event stream
+  or outbound job webhook (the git-sync webhook base-URL feature is inbound git-sync plumbing;
+  the `trigger_kind` webhook stamp is job metadata). Home Assistant webhook triggers remain
+  unauthenticated beyond the secret id (rolling HA documentation re-checked 2026-08-02).
+  WMHA-0026 is still backlog, so the no-production-evidence boundary is unchanged. No revisit
+  condition fired; the decision stands. Delta details and sources:
+  `docs/research/windmill-push-observation.md`, section "Successor check 2026-08-02".

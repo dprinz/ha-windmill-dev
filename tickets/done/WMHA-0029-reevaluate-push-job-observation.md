@@ -1,7 +1,7 @@
 ---
 id: WMHA-0029
 title: Re-evaluate push-based job observation against the successor Windmill contract
-status: backlog
+status: done
 type: research
 priority: low
 risk: medium
@@ -35,8 +35,14 @@ WMHA-0016 deferred push observation because v1.775.2 has no workspace-wide job e
 
 ## Acceptance criteria
 
-- [ ] Each ADR-0003 revisit condition is checked against dated primary sources and the result is recorded.
-- [ ] ADR-0003 is either re-confirmed with a new verification date or superseded by a new ADR with an evidence-backed design.
+- [x] Each ADR-0003 revisit condition is checked against dated primary sources and the result is recorded.
+  - Workspace-wide job stream / signed outbound job webhooks: **not present in v1.776.0** (sole successor of v1.775.2, published 2026-08-01). Raw v1.776.0 `openapi.yaml` grepped 2026-08-02: exactly 10 `text/event-stream` occurrences in the same 3 execution-scoped families (`run_and_stream` ×8, `batch_rerun_jobs` ×1, `getupdate_sse` ×1); path diff vs v1.775.2 adds only dbt endpoints, per-job polled `run_progress`/`dbt_graph`, `seed_full_diff`, `github_app_stale_webhooks`. `edit_webhook` unchanged (bare URL, no signature field); webhooks docs re-fetched 2026-08-02 still list no job events; v1.776.0 release notes read in full — nothing relevant.
+  - HA authenticated inbound webhook primitive: **unchanged** — HA webhook docs re-fetched 2026-08-02, still unauthenticated beyond secret id, `local_only` gate.
+  - Production evidence: **still absent** — WMHA-0026 remains backlog; recorded as evidence boundary.
+  - Windmill Cloud tenant-safe push channel: **not found**.
+  - Recorded in `docs/research/windmill-push-observation.md`, section "Successor check 2026-08-02 (WMHA-0029)"; sources added to `docs/research/source-register.md`.
+- [x] ADR-0003 is either re-confirmed with a new verification date or superseded by a new ADR with an evidence-backed design.
+  - **Re-confirmed 2026-08-02** (no trigger fired): re-confirmation note added to ADR-0003 ("Re-confirmations" section).
 
 ## Non-goals
 
@@ -61,10 +67,12 @@ Fill during implementation; do not pre-check.
 
 | Check | Command or inspection | Result |
 | --- | --- | --- |
-| Repository guardrails | `python scripts/validate_repository.py` | not run |
+| Repository guardrails | `python scripts/validate_repository.py` | passed 2026-08-02 (29 tickets checked, exit 0) |
+| Diff hygiene | `git diff --check` | passed 2026-08-02 (no output, exit 0) |
+| Test suite | not applicable | skipped — no production code changed (docs/plans/ticket only) |
 
 ## Review evidence
 
-- Reviewer/session: not started
-- Findings: not started
-- Resolution: not started
+- Reviewer/session: pending independent review
+- Findings: pending independent review
+- Resolution: pending independent review

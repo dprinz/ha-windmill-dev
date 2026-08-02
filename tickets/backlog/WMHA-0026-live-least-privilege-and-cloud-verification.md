@@ -51,6 +51,13 @@ WMHA-0015 proved the client end-to-end against a disposable CE `v1.775.2` instan
 - Never use credentials of a productive system; never commit tokens.
 - Live checks must not mutate anything outside disposable workspaces.
 
+## Blocking note
+
+2026-08-02: Deferred — the disposable-instance live checks need the Windmill server
+Docker image, which is not cached locally, and pulling new images was explicitly ruled
+out for this environment. Re-activate when the image is available locally or pulling is
+acceptable again. The Cloud check additionally needs a human-provided test tenant.
+
 ## Assumptions and research needs
 
 | Item | Classification | Validation |

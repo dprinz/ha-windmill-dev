@@ -37,6 +37,9 @@ Version-sensitive implementation claims must be traced to primary sources. Re-ch
 | Windmill error handling | https://www.windmill.dev/docs/core_concepts/error_handling | 2026-08-02 | error/success handler contracts and edition gating (WMHA-0016) |
 | Windmill workspace webhook event types | https://www.windmill.dev/docs/core_concepts/webhooks | 2026-08-02 | outbound webhook covers resource lifecycle only, no job events (WMHA-0016) |
 | Home Assistant webhook trigger | https://www.home-assistant.io/integrations/webhook/ | 2026-08-02 | inbound reachability, secret-id auth model, `local_only` (WMHA-0016) |
+| Windmill v1.776.0 release | https://github.com/windmill-labs/windmill/releases/tag/v1.776.0 | 2026-08-02 | sole successor of pinned v1.775.2; changelog spot check (WMHA-0029) |
+| Windmill API v1.776.0 OpenAPI | https://github.com/windmill-labs/windmill/blob/v1.776.0/backend/windmill-api/openapi.yaml | 2026-08-02 | successor SSE inventory (10 occurrences, unchanged 3 families), webhook/signature search, path diff (WMHA-0029) |
+| Windmill GitHub releases API | https://api.github.com/repos/windmill-labs/windmill/releases | 2026-08-02 | complete set of releases after the pin (WMHA-0029) |
 
 ## Research note requirements
 

@@ -109,3 +109,57 @@ Unresolved risks if push were built anyway:
 - Production observations (WMHA-0026's live-traffic check or user reports) show the 60 s cadence
   is a real latency or load problem.
 - Home Assistant gains an authenticated inbound webhook primitive beyond secret-id URLs.
+
+## Successor check 2026-08-02 (WMHA-0029)
+
+Re-check of the ADR-0003 revisit conditions against the successor release line. At check time the
+only release after the pinned v1.775.2 is **v1.776.0** (published 2026-08-01; GitHub Releases API,
+`repos/windmill-labs/windmill/releases`, queried 2026-08-02). This matches the live `/api/uptodate`
+observation from the WMHA-0015 smoke (installed v1.775.2 → latest v1.776.0).
+
+New sources for this delta:
+
+| Key | Primary source | Verified | Use |
+| --- | --- | --- | --- |
+| REL-1776 | [Windmill v1.776.0 release](https://github.com/windmill-labs/windmill/releases/tag/v1.776.0) | 2026-08-02 (release notes read in full) | successor changelog spot check |
+| OAPI-1776 | [OpenAPI at v1.776.0](https://github.com/windmill-labs/windmill/blob/v1.776.0/backend/windmill-api/openapi.yaml) | 2026-08-02 (raw file grepped directly) | SSE inventory, webhook/signature search, path diff vs v1.775.2 |
+| GH-REL | [GitHub Releases API](https://api.github.com/repos/windmill-labs/windmill/releases) | 2026-08-02 | complete successor release set |
+
+Findings per revisit condition:
+
+1. **Workspace-wide job lifecycle stream — not present.** The raw v1.776.0 `openapi.yaml`
+   contains exactly **10 `text/event-stream` occurrences**, the same count and the same three
+   execution-scoped path families as the v1.775.2 baseline: 8 in the `run_and_stream` family
+   (GET+POST for `f/{path}`, `fv/{version}`, `p/{path}`, `h/{hash}`), 1 in
+   `POST /api/w/{workspace}/jobs/run/batch_rerun_jobs`, 1 in
+   `GET /api/w/{workspace}/jobs_u/getupdate_sse/{id}`. A full path diff of the two pinned specs
+   shows only these additions: dbt runtime endpoints (`/dbt/*`, `jobs/dbt_graph/{id}`,
+   `jobs/dbt_resumable*`), per-job `GET /api/w/{workspace}/jobs/run_progress/{id}` (polled
+   `application/json` per-relation progress for one job id — a polling endpoint, not a stream,
+   and per-job/execution-scoped), `workspaces/seed_full_diff`, and
+   `settings/github_app_stale_webhooks` (inbound git-sync housekeeping). One removal:
+   `workspaces/edit_deploy_to`. No workspace-wide job event stream exists in v1.776.0.
+2. **Signed outbound job webhooks — not present.** `POST /api/w/{workspace}/workspaces/edit_webhook`
+   is unchanged and still takes a bare `{ "webhook": "<url>" }` string with no secret or signature
+   field. The rolling webhooks documentation (re-fetched 2026-08-02) still lists only resource
+   lifecycle and token-expiry event types for the workspace webhook — no job events — and documents
+   no payload signing. HMAC mentions in the v1.776.0 spec are pre-existing unrelated mechanisms
+   (job resume/cancel approval signatures, the per-job `job_view_token` present identically in
+   v1.775.2, EE telemetry, S3 presigned objects); `webhook_secret` belongs to inbound git-sync
+   auto-pull settings. The v1.776.0 release notes contain no job event stream or outbound job
+   webhook feature (the "dedicated base url for GitHub webhook delivery" feature is inbound
+   git-sync plumbing; "stamp webhook trigger_kind on token-driven job runs" is job metadata).
+3. **Authenticated HA inbound primitive — not present (unchanged).** The Home Assistant webhook
+   trigger documentation (re-fetched 2026-08-02) still states webhook endpoints "don't require
+   authentication, other than knowing a valid webhook ID", with `local_only` as the reachability
+   gate. No authenticated, replay-resistant inbound webhook primitive exists.
+4. **Production evidence — still absent (evidence boundary unchanged).** WMHA-0026 remains in the
+   backlog; no live-traffic observation and no user reports about the 60 s latency or request
+   volume exist. The WMHA-0015 smoke remains the only live observation and reported no latency or
+   load problem.
+5. **Windmill Cloud tenant-safe push channel — not found** in the successor OpenAPI, release
+   notes, or the re-fetched rolling documentation.
+
+Outcome: **no revisit condition fired; ADR-0003 is re-confirmed with verification date
+2026-08-02.** The next check is due at the next Windmill pin bump or when WMHA-0026 produces
+live-traffic evidence.
