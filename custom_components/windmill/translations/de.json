@@ -10,7 +10,7 @@
           "token": "Token"
         },
         "data_description": {
-          "base_url": "Zum Beispiel https://app.windmill.dev oder die URL deiner selbst gehosteten Instanz. HTTP ist nur für Loopback-Adressen erlaubt.",
+          "base_url": "Zum Beispiel {cloud_url} oder die URL deiner selbst gehosteten Instanz. HTTP ist nur für Loopback-Adressen erlaubt.",
           "token": "Ein Windmill-Benutzertoken mit minimalen Rechten. Ergänze `workspaces:read`, wenn du den Workspace aus einer Liste auswählen möchtest."
         }
       },

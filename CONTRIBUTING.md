@@ -11,3 +11,5 @@ All changes start from a repository ticket.
 7. Move the ticket to `tickets/done/` only after validation evidence is complete.
 
 Architecture changes require an ADR. External or version-sensitive claims require a primary source and verification date in `docs/research/`.
+
+Versioning, changelog and the release runbook are documented in `docs/development/versioning-and-releases.md`.

@@ -10,7 +10,7 @@
           "token": "Token"
         },
         "data_description": {
-          "base_url": "For example https://app.windmill.dev or the URL of your self-hosted instance. HTTP is allowed only for loopback addresses.",
+          "base_url": "For example {cloud_url} or the URL of your self-hosted instance. HTTP is allowed only for loopback addresses.",
           "token": "A least-privilege Windmill user token. Add `workspaces:read` if you want to pick the workspace from a list."
         }
       },

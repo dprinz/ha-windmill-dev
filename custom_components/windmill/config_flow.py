@@ -218,7 +218,11 @@ class WindmillConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }
         )
         return self.async_show_form(
-            step_id="user", data_schema=schema, errors=errors, last_step=False
+            step_id="user",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={"cloud_url": "https://app.windmill.dev"},
+            last_step=False,
         )
 
     async def async_step_workspace(

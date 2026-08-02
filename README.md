@@ -10,10 +10,24 @@ ever exposed.
 
 ## Installation
 
-This is a custom integration. Until HACS distribution is published, install it manually:
+Requires Home Assistant 2026.7.0 or newer.
+
+### HACS (recommended)
+
+The integration is available through [HACS](https://www.hacs.xyz/) as a custom repository:
+
+1. In Home Assistant, open **HACS → Integrations**, open the three-dot menu in the top right
+   and choose **Custom repositories**.
+2. Add `https://github.com/dprinz/ha-windmill-dev` with the category **Integration**.
+3. Search for **Windmill** in HACS and download it.
+4. Restart Home Assistant.
+5. Go to **Settings → Devices & services → Add integration** and search for **Windmill**.
+
+### Manual
 
 1. Copy the `custom_components/windmill` directory of this repository into the
-   `custom_components` directory of your Home Assistant configuration.
+   `custom_components` directory of your Home Assistant configuration (or unpack the
+   `windmill.zip` asset of a release into that directory).
 2. Restart Home Assistant.
 3. Go to **Settings → Devices & services → Add integration** and search for **Windmill**.
 

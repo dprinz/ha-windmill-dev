@@ -6,6 +6,7 @@
   "documentation": "https://github.com/dprinz/ha-windmill-dev",
   "integration_type": "service",
   "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/dprinz/ha-windmill-dev/issues",
   "requirements": [],
   "version": "0.1.0"
 }

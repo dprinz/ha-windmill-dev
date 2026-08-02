@@ -1,0 +1,37 @@
+name: Validate HACS and hassfest
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions: {}
+
+jobs:
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: HACS validation
+        # hacs/action main @ 2026-08-02; the action runs the validator from the
+        # floating ghcr.io/hacs/action:main image, see
+        # docs/research/hacs-and-release-requirements.md (R-005). The action
+        # reads the repository through the GitHub API, so no checkout is needed
+        # (matches the upstream example at hacs.xyz/docs/publish/action/).
+        uses: hacs/action@1ebf01c408f29afcb6406bd431bc98fd8cbb15aa
+        with:
+          category: integration
+          # The default PR comment needs pull-requests:write; keep permissions
+          # empty and read the result from the job log instead.
+          comment: false
+  hassfest:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Hassfest validation
+        # home-assistant/actions master @ 2026-08-02 (only master is
+        # maintained upstream, see research note R-008).
+        uses: home-assistant/actions/hassfest@ab22029681aa532bfe7de5774a9972d67bfbd2c0

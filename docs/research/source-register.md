@@ -28,6 +28,10 @@ Version-sensitive implementation claims must be traced to primary sources. Re-ch
 | Home Assistant integration manifest | https://developers.home-assistant.io/docs/creating_integration_manifest/ | 2026-08-02 | custom integration metadata, version and config-flow declaration |
 | Home Assistant integration setup failures | https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/test-before-setup/ | 2026-08-02 | setup retry and authentication failure mapping |
 | pytest-homeassistant-custom-component 0.13.348 | https://pypi.org/project/pytest-homeassistant-custom-component/0.13.348/ | 2026-08-02 | test-only harness pinned to Home Assistant 2026.7.4 |
+| HACS publishing requirements | https://www.hacs.xyz/docs/publish/start/ and https://www.hacs.xyz/docs/publish/integration/ | 2026-08-02 | `hacs.json` schema, repository layout, manifest keys, brand assets |
+| HACS validation action | https://www.hacs.xyz/docs/publish/action/ and https://github.com/hacs/action | 2026-08-02 | CI validation workflow, pinning limits of the Docker action |
+| HACS ZIP extraction behavior | https://github.com/hacs/integration/blob/main/custom_components/hacs/repositories/base.py | 2026-08-02 | release ZIP must contain integration files at its root |
+| hassfest action | https://github.com/home-assistant/actions | 2026-08-02 | only `master` branch maintained; pinned by SHA |
 
 ## Research note requirements
 

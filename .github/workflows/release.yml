@@ -1,0 +1,48 @@
+name: Release
+
+# Triggered only by pushing a version tag. Tags on this repository can only be
+# created by users with write access, so pull requests — including from forks —
+# can never reach the contents:write permission below.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the draft release and upload the asset
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Verify the tag targets the default branch
+        run: |
+          git fetch --no-tags --depth=50 origin main
+          if ! git merge-base --is-ancestor HEAD FETCH_HEAD; then
+            echo "Tag ${GITHUB_REF_NAME} does not point to a commit on main; refusing to release."
+            exit 1
+          fi
+      - name: Build the release archive
+        # Fails unless the tag version matches custom_components/windmill/manifest.json.
+        # The ref name goes through an env var, never into the shell command
+        # directly — ref names can contain command substitution syntax.
+        env:
+          TAG: ${{ github.ref_name }}
+        run: python scripts/build_release.py --tag "$TAG" --output dist
+      - name: Create a draft release
+        # The release is always a draft: a human reviews the notes, fills in
+        # the template sections and publishes manually.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: >-
+          gh release create "$TAG"
+          --draft
+          --title "Windmill $TAG"
+          --notes-file scripts/release_notes_template.md
+          --verify-tag
+          dist/windmill.zip
