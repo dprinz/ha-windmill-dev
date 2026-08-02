@@ -84,7 +84,7 @@ suggests an older interpreter is fine invites that misdiagnosis.
 | Workflow still parses and keeps its permissions | `yaml.safe_load` of the workflow | 2026-08-03: `permissions: {contents: read}` unchanged, three steps unchanged, `with: {python-version-file: .python-version}` |
 | Standard library only | imports of `scripts/validate_repository.py` | 2026-08-03: `json`, `re`, `sys`, `pathlib` |
 | No contradicting version left | `grep -rn "3\.13\|3\.12\|python-version"` over workflows, toml, md, json | 2026-08-03: only `AGENTS.md`'s counter-example and this ticket |
-| Guardrail workflow on `main` | `gh run list --workflow "Repository guardrails"` after the push | RUN_PLACEHOLDER |
+| Guardrail workflow on `main` | `gh run view 30772299845` after commit `fcfc93c` | 2026-08-03: success. The log shows "Resolved .python-version as 3.14" and "Successfully set up CPython (3.14.6)" — the runner offers a supported interpreter, closing the ticket's open assumption |
 
 ## Review evidence
 
