@@ -15,7 +15,14 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from . import WindmillConfigEntry
 from .api import CapabilityMatrix, is_managed_cloud
-from .const import CONF_BASE_URL, CONF_TOKEN, CONF_WORKSPACE, FEATURE_OPTIONS, OPT_RUNNABLES
+from .const import (
+    CONF_BASE_URL,
+    CONF_TOKEN,
+    CONF_WORKSPACE,
+    FEATURE_DEFAULTS,
+    FEATURE_OPTIONS,
+    OPT_RUNNABLES,
+)
 from .coordinator import load_selections
 
 TO_REDACT = {CONF_TOKEN, CONF_BASE_URL, CONF_WORKSPACE, "title", "unique_id"}
@@ -47,7 +54,10 @@ async def async_get_config_entry_diagnostics(
                 "is_super_admin": runtime.identity.is_super_admin,
             },
             "options": {
-                **{option: bool(entry.options.get(option)) for option in FEATURE_OPTIONS},
+                **{
+                    option: bool(entry.options.get(option, FEATURE_DEFAULTS[option]))
+                    for option in FEATURE_OPTIONS
+                },
                 "selected_runnables": len(selections),
                 "selection_modes": sorted({selection.mode.value for selection in selections}),
             },

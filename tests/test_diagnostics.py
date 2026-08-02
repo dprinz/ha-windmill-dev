@@ -10,8 +10,14 @@ from pytest_homeassistant_custom_component.components.diagnostics import (
 )
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 
-from custom_components.windmill.const import CONF_TOKEN, OPT_RUN_OBSERVATION, OPT_RUNNABLES
+from custom_components.windmill.const import (
+    CONF_TOKEN,
+    OPT_INSTANCE_HEALTH,
+    OPT_RUN_OBSERVATION,
+    OPT_RUNNABLES,
+)
 from tests.test_health import BASE_URL, ENTRY_DATA, WORKSPACE
+from tests.test_health import _setup_entry as _setup_health_entry
 from tests.test_runnables import LIGHTS_SELECTION, _setup_entry
 
 
@@ -60,3 +66,38 @@ async def test_diagnostics_redact_credentials_and_identity(
     assert report["entry"]["data_keys"] == ["base_url", "token", "workspace"]
     for forbidden in ("arguments", "result", "logs", "traceback", "authorization"):
         assert forbidden not in serialized.lower()
+    for forbidden in ("arguments", "result", "logs", "traceback", "authorization"):
+        assert forbidden not in serialized.lower()
+
+
+async def test_diagnostics_report_effective_feature_defaults(
+    hass: HomeAssistant, hass_client: ClientSessionGenerator
+) -> None:
+    """An entry whose options flow was never opened reports the effective defaults."""
+    assert await async_setup_component(hass, "diagnostics", {})
+    entry = await _setup_health_entry(hass, options={})
+
+    report = await get_diagnostics_for_config_entry(hass, hass_client, entry)
+
+    assert report["options"]["instance_health"] is True
+    assert report["options"]["run_observation"] is True
+    assert report["options"]["detailed_health"] is False
+    assert report["options"]["worker_groups"] is False
+    assert report["options"]["worker_details"] is False
+    assert report["options"]["update_entity"] is False
+    assert report["options"]["runnable_buttons"] is False
+
+
+async def test_diagnostics_report_explicitly_disabled_features(
+    hass: HomeAssistant, hass_client: ClientSessionGenerator
+) -> None:
+    """An explicit opt-out is reported as disabled, not masked by the defaults."""
+    assert await async_setup_component(hass, "diagnostics", {})
+    entry = await _setup_health_entry(
+        hass, options={OPT_INSTANCE_HEALTH: False, OPT_RUN_OBSERVATION: False}
+    )
+
+    report = await get_diagnostics_for_config_entry(hass, hass_client, entry)
+
+    assert report["options"]["instance_health"] is False
+    assert report["options"]["run_observation"] is False
