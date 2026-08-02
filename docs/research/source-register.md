@@ -32,6 +32,11 @@ Version-sensitive implementation claims must be traced to primary sources. Re-ch
 | HACS validation action | https://www.hacs.xyz/docs/publish/action/ and https://github.com/hacs/action | 2026-08-02 | CI validation workflow, pinning limits of the Docker action |
 | HACS ZIP extraction behavior | https://github.com/hacs/integration/blob/main/custom_components/hacs/repositories/base.py | 2026-08-02 | release ZIP must contain integration files at its root |
 | hassfest action | https://github.com/home-assistant/actions | 2026-08-02 | only `master` branch maintained; pinned by SHA |
+| Windmill v1.775.2 OpenAPI SSE inventory | https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-api/openapi.yaml | 2026-08-02 | per-job SSE endpoints only; no workspace-wide job event stream (WMHA-0016) |
+| Windmill streaming | https://www.windmill.dev/docs/core_concepts/streaming | 2026-08-02 | result/AI streaming model, SSE consumption paths (WMHA-0016) |
+| Windmill error handling | https://www.windmill.dev/docs/core_concepts/error_handling | 2026-08-02 | error/success handler contracts and edition gating (WMHA-0016) |
+| Windmill workspace webhook event types | https://www.windmill.dev/docs/core_concepts/webhooks | 2026-08-02 | outbound webhook covers resource lifecycle only, no job events (WMHA-0016) |
+| Home Assistant webhook trigger | https://www.home-assistant.io/integrations/webhook/ | 2026-08-02 | inbound reachability, secret-id auth model, `local_only` (WMHA-0016) |
 
 ## Research note requirements
 
