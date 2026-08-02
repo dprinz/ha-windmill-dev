@@ -63,8 +63,9 @@ pinned sources; on 429 the coordinator stretches to 300–900 s. These are deriv
 `coordinator.py`/`const.py`, not production measurements.
 
 Detection latency: a completion is observed at the next run poll → worst case ≈ 60 s, mean ≈ 30 s.
-Documented restart behavior: watermark + bounded seen-set persisted; one-poll startup loss window
-(accepted limitation 2, WMHA-0022/WMHA-0023).
+Documented restart behavior: watermark + bounded seen-set persisted; the one-poll startup loss
+window was closed by WMHA-0032, leaving only the newest-pending-completion residual
+(accepted limitation 2, WMHA-0022/WMHA-0023/WMHA-0032).
 
 ## Comparison
 

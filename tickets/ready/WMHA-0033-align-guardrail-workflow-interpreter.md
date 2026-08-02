@@ -1,7 +1,7 @@
 ---
 id: WMHA-0033
 title: Align the guardrail workflow interpreter with the supported Python
-status: backlog
+status: ready
 type: chore
 priority: low
 risk: low

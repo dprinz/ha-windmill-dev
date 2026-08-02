@@ -1,7 +1,7 @@
 ---
 id: WMHA-0031
 title: Run the test suite, lint and type check in CI
-status: backlog
+status: ready
 type: delivery
 priority: high
 risk: low

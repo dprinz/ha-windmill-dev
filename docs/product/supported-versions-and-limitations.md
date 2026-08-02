@@ -67,10 +67,13 @@ These are accepted, documented trade-offs of v1. Each links its source.
    the job is forgotten immediately and the scope filter drops its completion. You already
    received the action result; under the `all` scope the event fires normally
    (WMHA-0017, accepted residual risk).
-2. **Startup loss window of one poll interval.** A completion observed by the setup refresh is
-   delivered once Home Assistant has started; if the single poll in between fails, that completion
-   is lost permanently. Closing the window would reintroduce duplicate events (WMHA-0022/WMHA-0023,
-   accepted and documented).
+2. **Only the newest pending completion survives a bootstrap poll.** A completion observed by the
+   refresh during setup is delivered once Home Assistant has started, and a failing poll in between
+   no longer discards it (WMHA-0032 closed that loss window; the publication guard waits for
+   startup instead of for a successful poll). What remains: while the integration is unavailable or
+   still starting, only the most recent observed completion keeps its state write, so a poll that
+   observes a newer completion in that window supersedes the pending one. Duplicate delivery stays
+   impossible in every case (WMHA-0022/WMHA-0023/WMHA-0032).
 3. **Worker entities are fixed at setup.** Worker groups or instances created in Windmill after
    setup get entities only after a reload. A silent worker keeps its entity and reports `0`.
    Deployments with ephemeral `worker_instance` identifiers accumulate permanently-zero entities

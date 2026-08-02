@@ -34,6 +34,7 @@ class WindmillRunEventEntity(WindmillRunEntity, EventEntity):
     _key = "run"
     _attr_event_types = RUN_EVENT_TYPES
     _published: WindmillRunSnapshot | None = None
+    _started = False
 
     async def async_added_to_hass(self) -> None:
         """Deliver the completions the refresh during setup observed before this entity existed."""
@@ -47,16 +48,19 @@ class WindmillRunEventEntity(WindmillRunEntity, EventEntity):
     @callback
     def _async_deliver_pending(self, hass: HomeAssistant) -> None:
         """Route the pending snapshot through the same guard as any listener notification."""
+        self._started = True
         self._handle_coordinator_update()
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Publish every completion the coordinator observed for the first time."""
         snapshot = self.coordinator.data
-        if not self.coordinator.last_update_success or snapshot is self._published:
-            # A failed poll still notifies listeners while `coordinator.data` holds the previous
-            # snapshot. Publishing it again would fire every automation a second time for
-            # completions that happened once, so only a fresh observation may publish.
+        if not self._started or snapshot is self._published:
+            # Publication waits for the moment automations can be listening, and a snapshot is
+            # published at most once. A failed poll notifies listeners while `coordinator.data`
+            # still holds the previous snapshot, so identity alone prevents republication;
+            # `last_update_success` must not gate this, because the pending snapshot of the
+            # refresh during setup would then be dropped instead of merely delayed (WMHA-0032).
             super()._handle_coordinator_update()
             return
         self._published = snapshot

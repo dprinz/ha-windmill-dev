@@ -91,6 +91,7 @@ SUCCESS_JOB = _job(3, JobState.SUCCESS, completed_minutes=1)
 FAILURE_JOB = _job(4, JobState.FAILURE, completed_minutes=2)
 CANCELED_JOB = _job(5, JobState.CANCELED, completed_minutes=3)
 INITIAL_JOBS = (RUNNING_JOB, QUEUED_JOB, SUCCESS_JOB, FAILURE_JOB)
+LATE_SUCCESS_JOB = _job(6, JobState.SUCCESS, completed_minutes=5)
 OTHER_RUNNING_JOB = _job(20, JobState.RUNNING, path=OTHER_PATH)
 OTHER_SUCCESS_JOB = _job(21, JobState.SUCCESS, completed_minutes=1, path=OTHER_PATH)
 
@@ -312,6 +313,91 @@ async def test_setup_publication_waits_for_home_assistant_started(hass: HomeAssi
     fired = _fired_run_events(changes)
     assert len(fired) == 1
     assert fired[0].data["new_state"].attributes["job_id"] == CANCELED_JOB.id
+
+
+async def test_failed_poll_before_started_still_delivers_the_setup_completion(
+    hass: HomeAssistant,
+) -> None:
+    """A poll failing before startup completes must not swallow the pending completion."""
+    entry = await _setup_entry(hass, jobs=(RUNNING_JOB,))
+    hass.set_state(CoreState.starting)
+    changes = async_capture_events(hass, EVENT_STATE_CHANGED)
+
+    with patched_client(jobs=(RUNNING_JOB, CANCELED_JOB)):
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+
+    # The single poll between the setup refresh and startup fails; it notifies the listeners with
+    # the pending snapshot, which the entity has not published yet.
+    await _refresh(hass, jobs=WindmillRateLimitError(retry_after=30.0), minutes=4)
+
+    assert not _fired_run_events(changes)
+
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done()
+
+    # The entity is unavailable while the poll keeps failing, so the triggered event becomes
+    # visible with the next successful poll instead of being dropped.
+    await _refresh(hass, jobs=(RUNNING_JOB, CANCELED_JOB), minutes=6)
+
+    fired = _fired_run_events(changes)
+    assert len(fired) == 1
+    assert fired[0].data["new_state"].attributes["job_id"] == CANCELED_JOB.id
+
+    # A further poll must not republish it.
+    await _refresh(hass, jobs=(RUNNING_JOB, CANCELED_JOB), minutes=8)
+
+    assert len(_fired_run_events(changes)) == 1
+
+
+async def test_successful_poll_before_started_publishes_nothing_early(
+    hass: HomeAssistant,
+) -> None:
+    """A poll that succeeds during bootstrap must not fire events before automations listen."""
+    entry = await _setup_entry(hass, jobs=(RUNNING_JOB,))
+    hass.set_state(CoreState.starting)
+    changes = async_capture_events(hass, EVENT_STATE_CHANGED)
+
+    with patched_client(jobs=(RUNNING_JOB, CANCELED_JOB)):
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+
+    # This poll succeeds and observes a further completion while Home Assistant is still starting.
+    await _refresh(hass, jobs=(RUNNING_JOB, CANCELED_JOB, LATE_SUCCESS_JOB), minutes=4)
+
+    assert not _fired_run_events(changes)
+
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done()
+
+    fired = _fired_run_events(changes)
+    assert len(fired) == 1
+    assert fired[0].data["new_state"].attributes["job_id"] == LATE_SUCCESS_JOB.id
+
+
+async def test_recovery_completion_supersedes_the_pending_one_while_unavailable(
+    hass: HomeAssistant,
+) -> None:
+    """Measured residual: a newer completion at recovery takes the pending one's state write."""
+    entry = await _setup_entry(hass, jobs=(RUNNING_JOB,))
+    hass.set_state(CoreState.starting)
+    changes = async_capture_events(hass, EVENT_STATE_CHANGED)
+
+    with patched_client(jobs=(RUNNING_JOB, CANCELED_JOB)):
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+
+    await _refresh(hass, jobs=WindmillRateLimitError(retry_after=30.0), minutes=4)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done()
+
+    # The recovery poll observes a completion of its own. Both are triggered, but the writes of
+    # the pending one happened while the entity was unavailable, so only the newer one is visible.
+    await _refresh(hass, jobs=(RUNNING_JOB, CANCELED_JOB, LATE_SUCCESS_JOB), minutes=6)
+
+    fired = _fired_run_events(changes)
+    assert len(fired) == 1
+    assert fired[0].data["new_state"].attributes["job_id"] == LATE_SUCCESS_JOB.id
 
 
 async def test_unload_before_started_cancels_the_pending_publication(hass: HomeAssistant) -> None:
