@@ -18,6 +18,14 @@ OPT_RUN_OBSERVATION = "run_observation"
 OPT_UPDATE_ENTITY = "update_entity"
 OPT_RUNNABLES = "runnables"
 OPT_RUNNABLE_BUTTONS = "runnable_buttons"
+OPT_RUN_SCOPE = "run_scope"
+
+RUN_SCOPE_ALL = "all"
+RUN_SCOPE_SELECTED = "selected_runnables"
+RUN_SCOPE_STARTED = "home_assistant_started"
+RUN_SCOPES = (RUN_SCOPE_ALL, RUN_SCOPE_SELECTED, RUN_SCOPE_STARTED)
+# Observing everything the token may see is the previous behavior and needs no other option.
+DEFAULT_RUN_SCOPE = RUN_SCOPE_ALL
 
 ATTR_CONFIG_ENTRY_ID = "config_entry_id"
 ATTR_KIND = "kind"

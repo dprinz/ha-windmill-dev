@@ -47,6 +47,7 @@ from .const import (
     CONF_BASE_URL,
     CONF_TOKEN,
     CONF_WORKSPACE,
+    DEFAULT_RUN_SCOPE,
     DOMAIN,
     FEATURE_DEFAULTS,
     FEATURE_OPTIONS,
@@ -54,11 +55,18 @@ from .const import (
     OPT_DETAILED_HEALTH,
     OPT_INSTANCE_HEALTH,
     OPT_RUN_OBSERVATION,
+    OPT_RUN_SCOPE,
     OPT_RUNNABLES,
     OPT_UPDATE_ENTITY,
     OPT_WORKER_DETAILS,
+    RUN_SCOPES,
 )
-from .coordinator import RunnableSelection, async_discover_runnables, load_selections
+from .coordinator import (
+    RunnableSelection,
+    async_discover_runnables,
+    load_selections,
+    run_scope_from_options,
+)
 
 TOKEN_SELECTOR = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
 CONF_PIN = "pin_selected"
@@ -138,12 +146,21 @@ def _feature_defaults(capabilities: CapabilityMatrix) -> dict[str, bool]:
     }
 
 
-def _feature_schema(defaults: Mapping[str, bool]) -> vol.Schema:
+def _feature_schema(defaults: Mapping[str, bool], run_scope: str) -> vol.Schema:
     """Build the opt-in feature schema shared by onboarding and options."""
     return vol.Schema(
         {
             vol.Required(key, default=defaults.get(key, FEATURE_DEFAULTS[key])): BooleanSelector()
             for key in FEATURE_OPTIONS
+        }
+        | {
+            vol.Required(OPT_RUN_SCOPE, default=run_scope): SelectSelector(
+                SelectSelectorConfig(
+                    options=list(RUN_SCOPES),
+                    mode=SelectSelectorMode.DROPDOWN,
+                    translation_key=OPT_RUN_SCOPE,
+                )
+            )
         }
     )
 
@@ -151,6 +168,14 @@ def _feature_schema(defaults: Mapping[str, bool]) -> vol.Schema:
 def _selected_features(user_input: Mapping[str, Any]) -> dict[str, bool]:
     """Normalize submitted toggles into a complete boolean feature selection."""
     return {key: bool(user_input.get(key, False)) for key in FEATURE_OPTIONS}
+
+
+def _feature_options(user_input: Mapping[str, Any]) -> dict[str, Any]:
+    """Normalize a submitted features form into the stored option set."""
+    return {
+        **_selected_features(user_input),
+        OPT_RUN_SCOPE: run_scope_from_options(user_input),
+    }
 
 
 class WindmillConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -259,13 +284,13 @@ class WindmillConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_WORKSPACE: self._workspace,
                     CONF_TOKEN: self._token,
                 },
-                options=_selected_features(user_input),
+                options=_feature_options(user_input),
             )
 
         capabilities = self._require_capabilities()
         return self.async_show_form(
             step_id="features",
-            data_schema=_feature_schema(_feature_defaults(capabilities)),
+            data_schema=_feature_schema(_feature_defaults(capabilities), DEFAULT_RUN_SCOPE),
         )
 
     async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
@@ -480,13 +505,16 @@ class WindmillOptionsFlow(OptionsFlowWithReload):
     ) -> ConfigFlowResult:
         """Show and store the feature selection of an existing entry."""
         if user_input is not None:
-            return self._async_save({**_selected_features(user_input)})
+            return self._async_save(_feature_options(user_input))
 
         current = {
             key: bool(self.config_entry.options.get(key, FEATURE_DEFAULTS[key]))
             for key in FEATURE_OPTIONS
         }
-        return self.async_show_form(step_id="features", data_schema=_feature_schema(current))
+        return self.async_show_form(
+            step_id="features",
+            data_schema=_feature_schema(current, run_scope_from_options(self.config_entry.options)),
+        )
 
     async def async_step_runnables(
         self, user_input: dict[str, Any] | None = None

@@ -45,10 +45,13 @@ from custom_components.windmill.const import (
     OPT_DETAILED_HEALTH,
     OPT_INSTANCE_HEALTH,
     OPT_RUN_OBSERVATION,
+    OPT_RUN_SCOPE,
     OPT_RUNNABLE_BUTTONS,
     OPT_UPDATE_ENTITY,
     OPT_WORKER_DETAILS,
     OPT_WORKER_GROUPS,
+    RUN_SCOPE_ALL,
+    RUN_SCOPE_STARTED,
 )
 
 TOKEN = "obviously-fake-test-token"
@@ -255,6 +258,7 @@ async def test_guided_onboarding_creates_entry(
             OPT_RUN_OBSERVATION: True,
             OPT_UPDATE_ENTITY: False,
             OPT_RUNNABLE_BUTTONS: False,
+            OPT_RUN_SCOPE: RUN_SCOPE_ALL,
         }
 
         result = await hass.config_entries.flow.async_configure(
@@ -267,6 +271,7 @@ async def test_guided_onboarding_creates_entry(
                 OPT_RUN_OBSERVATION: True,
                 OPT_UPDATE_ENTITY: False,
                 OPT_RUNNABLE_BUTTONS: False,
+                OPT_RUN_SCOPE: RUN_SCOPE_ALL,
             },
         )
         await hass.async_block_till_done()
@@ -282,8 +287,36 @@ async def test_guided_onboarding_creates_entry(
         OPT_RUN_OBSERVATION: True,
         OPT_UPDATE_ENTITY: False,
         OPT_RUNNABLE_BUTTONS: False,
+        OPT_RUN_SCOPE: RUN_SCOPE_ALL,
     }
     assert TOKEN not in caplog.text
+
+
+async def test_onboarding_stores_the_chosen_run_scope(hass: HomeAssistant) -> None:
+    """A run scope chosen during onboarding is stored with the safe default offered."""
+    with patched_client():
+        result = await _start_connection_step(hass, CONNECTION_INPUT)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_WORKSPACE: WORKSPACE}
+        )
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+
+        fields = _schema_fields(result)
+        scope_selector = fields[OPT_RUN_SCOPE]
+        assert isinstance(scope_selector, SelectSelector)
+        assert scope_selector.config["options"] == [
+            "all",
+            "selected_runnables",
+            "home_assistant_started",
+        ]
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {**ALL_FEATURES_OFF, OPT_RUN_SCOPE: RUN_SCOPE_STARTED}
+        )
+        await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["options"][OPT_RUN_SCOPE] == RUN_SCOPE_STARTED
 
 
 async def test_restricted_token_uses_manual_workspace_entry(hass: HomeAssistant) -> None:
@@ -508,6 +541,7 @@ async def _add_loaded_entry(hass: HomeAssistant) -> MockConfigEntry:
             OPT_RUN_OBSERVATION: True,
             OPT_UPDATE_ENTITY: False,
             OPT_RUNNABLE_BUTTONS: False,
+            OPT_RUN_SCOPE: RUN_SCOPE_ALL,
         },
     )
     entry.add_to_hass(hass)
@@ -723,6 +757,7 @@ async def test_options_flow_updates_features_and_reloads(hass: HomeAssistant) ->
                 OPT_RUN_OBSERVATION: False,
                 OPT_UPDATE_ENTITY: False,
                 OPT_RUNNABLE_BUTTONS: False,
+                OPT_RUN_SCOPE: RUN_SCOPE_STARTED,
             },
         )
         await hass.async_block_till_done()
@@ -736,6 +771,7 @@ async def test_options_flow_updates_features_and_reloads(hass: HomeAssistant) ->
         OPT_RUN_OBSERVATION: False,
         OPT_UPDATE_ENTITY: False,
         OPT_RUNNABLE_BUTTONS: False,
+        OPT_RUN_SCOPE: RUN_SCOPE_STARTED,
     }
     assert entry.data == ENTRY_DATA
     assert entry.state is config_entries.ConfigEntryState.LOADED
@@ -769,4 +805,5 @@ async def test_options_flow_defaults_for_legacy_entry(hass: HomeAssistant) -> No
         OPT_RUN_OBSERVATION: True,
         OPT_UPDATE_ENTITY: False,
         OPT_RUNNABLE_BUTTONS: False,
+        OPT_RUN_SCOPE: RUN_SCOPE_ALL,
     }

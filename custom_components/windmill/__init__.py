@@ -54,6 +54,7 @@ from .coordinator import (
     async_job_store,
     async_run_store,
     load_selections,
+    run_scope_from_options,
 )
 from .issues import async_delete_issues, async_evaluate_issues
 from .models import WindmillRuntimeData
@@ -131,20 +132,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: WindmillConfigEntry) -> 
         )
         await worker_coordinator.async_config_entry_first_refresh()
 
+    started_jobs = StartedJobRegistry(async_job_store(hass, entry.entry_id))
+    await started_jobs.async_load()
+
+    selections = load_selections(entry.options.get(OPT_RUNNABLES))
+
     run_coordinator: WindmillRunCoordinator | None = None
     if _feature_enabled(entry, OPT_RUN_OBSERVATION) and _supported(capabilities.runs):
         store = async_run_store(hass, entry.entry_id)
+        state = RunObservationState.from_dict(await store.async_load())
+        scope = run_scope_from_options(entry.options)
+        state.align_scope(scope)
         run_coordinator = WindmillRunCoordinator(
             hass,
             entry,
             client,
             store,
-            RunObservationState.from_dict(await store.async_load()),
+            state,
+            scope=scope,
+            selected=frozenset(selection.key for selection in selections),
+            started_jobs=started_jobs,
         )
         await run_coordinator.async_config_entry_first_refresh()
 
     runnable_coordinator: WindmillRunnableCoordinator | None = None
-    selections = load_selections(entry.options.get(OPT_RUNNABLES))
     if selections and (
         _supported(capabilities.script_discovery) or _supported(capabilities.flow_discovery)
     ):
@@ -160,9 +171,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: WindmillConfigEntry) -> 
         update_coordinator = WindmillUpdateCoordinator(hass, entry, client)
         # The upstream check depends on GitHub, so a failure must not fail setup.
         await update_coordinator.async_refresh()
-
-    started_jobs = StartedJobRegistry(async_job_store(hass, entry.entry_id))
-    await started_jobs.async_load()
 
     entry.runtime_data = WindmillRuntimeData(
         client=client,

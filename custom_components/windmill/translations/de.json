@@ -38,14 +38,16 @@
           "worker_details": "Details einzelner Worker",
           "run_observation": "Job- und Run-Beobachtung",
           "update_entity": "Update-Verfügbarkeit",
-          "runnable_buttons": "Schaltflächen für parameterlose Runnables"
+          "runnable_buttons": "Schaltflächen für parameterlose Runnables",
+          "run_scope": "Beobachtungsumfang für Runs"
         },
         "data_description": {
           "detailed_health": "Administrativ: benötigt ein Token, das Windmill auf dem detaillierten Health-Endpunkt akzeptiert.",
           "worker_groups": "Administrativ: zeigt lebendige Worker und Versionsabweichungen pro Worker-Gruppe.",
           "worker_details": "Hohe Kardinalität: fügt eine Entität pro Worker-Instanz hinzu und ist für Betreiber selbst gehosteter Instanzen gedacht.",
           "update_entity": "Nur für Self-Hosting. Verwaltete Windmill-Cloud-Deployments werden von Windmill aktualisiert.",
-          "runnable_buttons": "Optional: fügt pro ausgewähltem Runnable ohne Argumente eine Schaltfläche hinzu. Die Aktion bleibt in jedem Fall verfügbar."
+          "runnable_buttons": "Optional: fügt pro ausgewähltem Runnable ohne Argumente eine Schaltfläche hinzu. Die Aktion bleibt in jedem Fall verfügbar.",
+          "run_scope": "Schränkt die Run-Sensoren und die Run-Ereignisentität auf ausgewählte Skripte und Flows oder auf von dieser Integration gestartete Jobs ein. Ein Wechsel des Umfangs wiederholt keine älteren Abschlüsse."
         }
       },
       "reauth_confirm": {
@@ -173,14 +175,16 @@
           "worker_details": "Details einzelner Worker",
           "run_observation": "Job- und Run-Beobachtung",
           "update_entity": "Update-Verfügbarkeit",
-          "runnable_buttons": "Schaltflächen für parameterlose Runnables"
+          "runnable_buttons": "Schaltflächen für parameterlose Runnables",
+          "run_scope": "Beobachtungsumfang für Runs"
         },
         "data_description": {
           "detailed_health": "Administrativ: benötigt ein Token, das Windmill auf dem detaillierten Health-Endpunkt akzeptiert.",
           "worker_groups": "Administrativ: zeigt lebendige Worker und Versionsabweichungen pro Worker-Gruppe.",
           "worker_details": "Hohe Kardinalität: fügt eine Entität pro Worker-Instanz hinzu und ist für Betreiber selbst gehosteter Instanzen gedacht.",
           "update_entity": "Nur für Self-Hosting. Verwaltete Windmill-Cloud-Deployments werden von Windmill aktualisiert.",
-          "runnable_buttons": "Optional: fügt pro ausgewähltem Runnable ohne Argumente eine Schaltfläche hinzu. Die Aktion bleibt in jedem Fall verfügbar."
+          "runnable_buttons": "Optional: fügt pro ausgewähltem Runnable ohne Argumente eine Schaltfläche hinzu. Die Aktion bleibt in jedem Fall verfügbar.",
+          "run_scope": "Schränkt die Run-Sensoren und die Run-Ereignisentität auf ausgewählte Skripte und Flows oder auf von dieser Integration gestartete Jobs ein. Ein Wechsel des Umfangs wiederholt keine älteren Abschlüsse."
         }
       },
       "runnables": {
@@ -197,6 +201,15 @@
     },
     "error": {
       "too_many_runnables": "Wähle weniger Runnables aus."
+    }
+  },
+  "selector": {
+    "run_scope": {
+      "options": {
+        "all": "Alle sichtbaren Top-Level-Jobs",
+        "selected_runnables": "Ausgewählte Skripte und Flows",
+        "home_assistant_started": "Von Home Assistant gestartete Jobs"
+      }
     }
   },
   "services": {

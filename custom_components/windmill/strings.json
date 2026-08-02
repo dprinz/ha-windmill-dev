@@ -38,14 +38,16 @@
           "worker_details": "Individual worker details",
           "run_observation": "Job and run observation",
           "update_entity": "Update availability",
-          "runnable_buttons": "Buttons for parameterless runnables"
+          "runnable_buttons": "Buttons for parameterless runnables",
+          "run_scope": "Run observation scope"
         },
         "data_description": {
           "detailed_health": "Administrative: needs a token that Windmill accepts on the detailed health endpoint.",
           "worker_groups": "Administrative: exposes alive workers and version drift per worker group.",
           "worker_details": "High cardinality: adds one entity per worker instance and is meant for self-hosted operators.",
           "update_entity": "Self-hosted only. Managed Windmill Cloud deployments are updated by Windmill.",
-          "runnable_buttons": "Optional: adds one button per selected runnable that needs no arguments. The action stays available either way."
+          "runnable_buttons": "Optional: adds one button per selected runnable that needs no arguments. The action stays available either way.",
+          "run_scope": "Narrows the run sensors and the run event entity to selected scripts and flows or to jobs this integration started. A scope change never replays older completions."
         }
       },
       "reauth_confirm": {
@@ -173,14 +175,16 @@
           "worker_details": "Individual worker details",
           "run_observation": "Job and run observation",
           "update_entity": "Update availability",
-          "runnable_buttons": "Buttons for parameterless runnables"
+          "runnable_buttons": "Buttons for parameterless runnables",
+          "run_scope": "Run observation scope"
         },
         "data_description": {
           "detailed_health": "Administrative: needs a token that Windmill accepts on the detailed health endpoint.",
           "worker_groups": "Administrative: exposes alive workers and version drift per worker group.",
           "worker_details": "High cardinality: adds one entity per worker instance and is meant for self-hosted operators.",
           "update_entity": "Self-hosted only. Managed Windmill Cloud deployments are updated by Windmill.",
-          "runnable_buttons": "Optional: adds one button per selected runnable that needs no arguments. The action stays available either way."
+          "runnable_buttons": "Optional: adds one button per selected runnable that needs no arguments. The action stays available either way.",
+          "run_scope": "Narrows the run sensors and the run event entity to selected scripts and flows or to jobs this integration started. A scope change never replays older completions."
         }
       },
       "runnables": {
@@ -197,6 +201,15 @@
     },
     "error": {
       "too_many_runnables": "Select fewer runnables."
+    }
+  },
+  "selector": {
+    "run_scope": {
+      "options": {
+        "all": "All visible top-level jobs",
+        "selected_runnables": "Selected scripts and flows",
+        "home_assistant_started": "Jobs started by Home Assistant"
+      }
     }
   },
   "services": {

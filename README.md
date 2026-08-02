@@ -69,6 +69,17 @@ Feature options and their defaults:
 | `update_entity` | off | Update entity for self-hosted instances |
 | `runnable_buttons` | off | One button per selected parameterless runnable |
 
+The features step also offers the run observation scope (`run_scope`, default `all`). It decides
+which top-level jobs the run sensors and the run event entity cover: `all` keeps every visible
+top-level job, `selected_runnables` narrows observation to the scripts and flows selected under
+**Configure → Scripts and flows**, and `home_assistant_started` narrows it to jobs this
+integration started. Changing the scope never replays older completions as new events; the
+last-run timestamps restart for the new scope while the replay protection is kept. One deliberate
+interaction: a job cancelled through the integration's own cancel action emits no `canceled` event
+under the `home_assistant_started` scope, because the cancel action stops tracking the job
+immediately and the scope then no longer matches it — you cancelled the job yourself, so no event
+is emitted. Under the `all` scope the cancellation fires normally.
+
 Under **Configure → Scripts and flows** you select which scripts and flows Home Assistant may ever
 run (at most 25). Optionally, newly selected runnables are pinned to their current script hash or
 flow version; unpinned runnables follow the latest deployment. Changing options reloads the

@@ -28,23 +28,39 @@ from custom_components.windmill.api import (
     JobState,
     WindmillAuthenticationError,
     WindmillJob,
+    WindmillNotFoundError,
     WindmillRateLimitError,
 )
 from custom_components.windmill.const import (
     DOMAIN,
     OPT_INSTANCE_HEALTH,
     OPT_RUN_OBSERVATION,
+    OPT_RUN_SCOPE,
+    OPT_RUNNABLES,
+    RUN_SCOPE_ALL,
+    RUN_SCOPE_SELECTED,
+    RUN_SCOPE_STARTED,
 )
 from custom_components.windmill.coordinator import (
     MAX_RUN_PAGES,
     RUN_PAGE_SIZE,
     RunObservationState,
+    TrackedJob,
 )
 from tests.test_health import CONNECTION, ENTRY_DATA, WORKSPACE, _capabilities
 
 UNAUTHORIZED_RUNS = _capabilities()
 BASE_TIME = datetime(2026, 8, 2, 10, 0, tzinfo=UTC)
 RUN_OPTIONS = {OPT_INSTANCE_HEALTH: False, OPT_RUN_OBSERVATION: True}
+LIGHTS_PATH = "u/automation/lights"
+OTHER_PATH = "u/other/thing"
+LIGHTS_SELECTION = {"kind": "script", "path": LIGHTS_PATH, "mode": "latest"}
+SELECTED_SCOPE_OPTIONS = {
+    **RUN_OPTIONS,
+    OPT_RUN_SCOPE: RUN_SCOPE_SELECTED,
+    OPT_RUNNABLES: [LIGHTS_SELECTION],
+}
+STARTED_SCOPE_OPTIONS = {**RUN_OPTIONS, OPT_RUN_SCOPE: RUN_SCOPE_STARTED}
 
 
 def _job(
@@ -75,6 +91,8 @@ SUCCESS_JOB = _job(3, JobState.SUCCESS, completed_minutes=1)
 FAILURE_JOB = _job(4, JobState.FAILURE, completed_minutes=2)
 CANCELED_JOB = _job(5, JobState.CANCELED, completed_minutes=3)
 INITIAL_JOBS = (RUNNING_JOB, QUEUED_JOB, SUCCESS_JOB, FAILURE_JOB)
+OTHER_RUNNING_JOB = _job(20, JobState.RUNNING, path=OTHER_PATH)
+OTHER_SUCCESS_JOB = _job(21, JobState.SUCCESS, completed_minutes=1, path=OTHER_PATH)
 
 
 def _as_mock(value: Any) -> AsyncMock:
@@ -91,6 +109,8 @@ def patched_client(*, jobs: Any = INITIAL_JOBS) -> Iterator[dict[str, AsyncMock]
         "connect": _as_mock(CONNECTION),
         "capabilities": _as_mock(_capabilities()),
         "jobs": _as_mock(jobs) if not callable(jobs) else AsyncMock(side_effect=jobs),
+        # Selected runnables resolve as missing; the run scope does not need their details.
+        "runnable": _as_mock(WindmillNotFoundError()),
     }
     targets = {
         "connect": "custom_components.windmill.api.WindmillClient.async_connect",
@@ -98,6 +118,7 @@ def patched_client(*, jobs: Any = INITIAL_JOBS) -> Iterator[dict[str, AsyncMock]
             "custom_components.windmill.api.WindmillClient.async_discover_capabilities"
         ),
         "jobs": "custom_components.windmill.api.WindmillClient.async_list_jobs",
+        "runnable": "custom_components.windmill.api.WindmillClient.async_get_runnable",
     }
     with ExitStack() as stack:
         for key, target in targets.items():
@@ -109,7 +130,7 @@ async def _setup_entry(
     hass: HomeAssistant,
     *,
     jobs: Any = INITIAL_JOBS,
-    options: dict[str, bool] | None = None,
+    options: dict[str, Any] | None = None,
 ) -> MockConfigEntry:
     """Set up one loaded Windmill entry with run observation enabled."""
     entry = MockConfigEntry(
@@ -520,3 +541,210 @@ async def test_first_completion_after_an_empty_start_still_fires(hass: HomeAssis
     event = hass.states.get("event.home_assistant_run")
     assert event.attributes["event_type"] == "success"
     assert event.attributes["job_id"] == SUCCESS_JOB.id
+
+
+async def test_selected_runnables_scope_observes_only_the_selection(
+    hass: HomeAssistant,
+) -> None:
+    """The selected-runnables scope counts and fires only for selected paths."""
+    await _setup_entry(
+        hass,
+        jobs=(RUNNING_JOB, OTHER_RUNNING_JOB, OTHER_SUCCESS_JOB),
+        options=SELECTED_SCOPE_OPTIONS,
+    )
+
+    assert hass.states.get("sensor.home_assistant_running_jobs_workspace").state == "1"
+    assert hass.states.get("sensor.home_assistant_queued_jobs_workspace").state == "0"
+    # The out-of-scope completion never reaches the scoped timestamps.
+    assert hass.states.get("sensor.home_assistant_last_successful_run").state == STATE_UNKNOWN
+
+    await _refresh(
+        hass,
+        jobs=(RUNNING_JOB, OTHER_RUNNING_JOB, OTHER_SUCCESS_JOB, SUCCESS_JOB),
+    )
+
+    event = hass.states.get("event.home_assistant_run")
+    assert event.attributes["event_type"] == "success"
+    assert event.attributes["job_id"] == SUCCESS_JOB.id
+    assert (
+        hass.states.get("sensor.home_assistant_last_successful_run").state
+        == (BASE_TIME + timedelta(minutes=1)).isoformat()
+    )
+
+
+async def test_selected_runnables_scope_without_selection_observes_nothing(
+    hass: HomeAssistant,
+) -> None:
+    """A selected-runnables scope without a selection matches no job at all."""
+    await _setup_entry(
+        hass,
+        jobs=INITIAL_JOBS,
+        options={**RUN_OPTIONS, OPT_RUN_SCOPE: RUN_SCOPE_SELECTED},
+    )
+
+    assert hass.states.get("sensor.home_assistant_running_jobs_workspace").state == "0"
+    assert hass.states.get("sensor.home_assistant_queued_jobs_workspace").state == "0"
+
+    await _refresh(hass, jobs=(*INITIAL_JOBS, CANCELED_JOB))
+
+    assert hass.states.get("event.home_assistant_run").state == STATE_UNKNOWN
+    assert hass.states.get("sensor.home_assistant_last_failed_run").state == STATE_UNKNOWN
+
+
+async def test_home_assistant_started_scope_observes_only_tracked_jobs(
+    hass: HomeAssistant,
+) -> None:
+    """The started-by-Home-Assistant scope follows the started-job registry."""
+    entry = await _setup_entry(hass, jobs=(RUNNING_JOB,), options=STARTED_SCOPE_OPTIONS)
+
+    assert hass.states.get("sensor.home_assistant_running_jobs_workspace").state == "0"
+
+    tracked_running = _job(30, JobState.RUNNING)
+    tracked_done = _job(30, JobState.SUCCESS, completed_minutes=4)
+    foreign_done = _job(31, JobState.SUCCESS, completed_minutes=5)
+    await entry.runtime_data.started_jobs.async_track(
+        TrackedJob(
+            job_id=tracked_running.id,
+            kind="script",
+            path=LIGHTS_PATH,
+            started_at=dt_util.utcnow(),
+        )
+    )
+
+    await _refresh(hass, jobs=(RUNNING_JOB, tracked_running))
+
+    assert hass.states.get("sensor.home_assistant_running_jobs_workspace").state == "1"
+    assert hass.states.get("event.home_assistant_run").state == STATE_UNKNOWN
+
+    await _refresh(hass, jobs=(tracked_done, foreign_done), minutes=4)
+
+    event = hass.states.get("event.home_assistant_run")
+    assert event.attributes["event_type"] == "success"
+    assert event.attributes["job_id"] == tracked_done.id
+    assert (
+        hass.states.get("sensor.home_assistant_last_successful_run").state
+        == (BASE_TIME + timedelta(minutes=4)).isoformat()
+    )
+
+
+async def test_scope_change_never_replays_and_rescopes_observation(
+    hass: HomeAssistant,
+) -> None:
+    """A scope change keeps the replay protection and restarts the scoped timestamps."""
+    entry = await _setup_entry(hass)
+    await _refresh(hass, jobs=(*INITIAL_JOBS, CANCELED_JOB))
+    fired_at = hass.states.get("event.home_assistant_run").state
+    assert hass.states.get("event.home_assistant_run").attributes["job_id"] == CANCELED_JOB.id
+
+    hass.config_entries.async_update_entry(entry, options=SELECTED_SCOPE_OPTIONS)
+    with patched_client(jobs=(*INITIAL_JOBS, CANCELED_JOB, OTHER_RUNNING_JOB)):
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+
+    # Nothing already observed fires again and the counters respect the new scope,
+    # while the scoped last-run timestamps restart empty.
+    assert hass.states.get("event.home_assistant_run").state == fired_at
+    assert hass.states.get("sensor.home_assistant_running_jobs_workspace").state == "1"
+    assert hass.states.get("sensor.home_assistant_last_successful_run").state == STATE_UNKNOWN
+    assert hass.states.get("sensor.home_assistant_last_failed_run").state == STATE_UNKNOWN
+
+    await _refresh(hass, jobs=(*INITIAL_JOBS, CANCELED_JOB), minutes=6)
+
+    assert hass.states.get("event.home_assistant_run").state == fired_at
+
+    new_in_scope = _job(40, JobState.SUCCESS, completed_minutes=6)
+    new_out_of_scope = _job(41, JobState.FAILURE, completed_minutes=7, path=OTHER_PATH)
+    await _refresh(hass, jobs=(new_in_scope, new_out_of_scope), minutes=8)
+
+    event = hass.states.get("event.home_assistant_run")
+    assert event.attributes["event_type"] == "success"
+    assert event.attributes["job_id"] == new_in_scope.id
+    assert (
+        hass.states.get("sensor.home_assistant_last_successful_run").state
+        == (BASE_TIME + timedelta(minutes=6)).isoformat()
+    )
+    # The out-of-scope failure is filtered before retention, so it leaves no trace.
+    assert hass.states.get("sensor.home_assistant_last_failed_run").state == STATE_UNKNOWN
+
+
+async def test_unknown_scope_value_falls_back_to_all(hass: HomeAssistant) -> None:
+    """A scope value this version does not know degrades to observing everything."""
+    await _setup_entry(hass, options={**RUN_OPTIONS, OPT_RUN_SCOPE: "bogus"})
+
+    assert hass.states.get("sensor.home_assistant_running_jobs_workspace").state == "1"
+    assert hass.states.get("sensor.home_assistant_queued_jobs_workspace").state == "1"
+    assert (
+        hass.states.get("sensor.home_assistant_last_successful_run").state
+        == (BASE_TIME + timedelta(minutes=1)).isoformat()
+    )
+
+
+def test_scope_change_resets_only_the_scoped_timestamps() -> None:
+    """Retention keeps watermark, seen identifiers and initialization across a scope change."""
+    state = RunObservationState()
+    state.remember(SUCCESS_JOB)
+    state.remember(FAILURE_JOB)
+    state.initialized = True
+
+    state.align_scope(RUN_SCOPE_SELECTED)
+
+    assert state.scope == RUN_SCOPE_SELECTED
+    assert state.last_success is None
+    assert state.last_failure is None
+    assert state.watermark == FAILURE_JOB.completed_at
+    assert list(state.seen) == [SUCCESS_JOB.id, FAILURE_JOB.id]
+    assert state.initialized
+    assert state.remember(SUCCESS_JOB) is False
+
+    restored = RunObservationState.from_dict(state.as_dict())
+    assert restored.scope == RUN_SCOPE_SELECTED
+    assert restored.last_success is None
+    restored.align_scope(RUN_SCOPE_SELECTED)
+    assert restored.scope == RUN_SCOPE_SELECTED
+
+    legacy = RunObservationState.from_dict({"scope": "bogus"})
+    assert legacy.scope == RUN_SCOPE_ALL
+
+
+async def test_scope_widening_fires_an_unobserved_completion_exactly_once(
+    hass: HomeAssistant,
+) -> None:
+    """A widening scope adopts completions it never observed, once and only once.
+
+    A completion that happened before the change but outside the old scope and above the
+    watermark is genuinely new information: it fires exactly once under the wider scope and
+    then lives in the retention like any other observed completion.
+    """
+    entry = await _setup_entry(
+        hass, jobs=(RUNNING_JOB, SUCCESS_JOB), options=SELECTED_SCOPE_OPTIONS
+    )
+    unobserved = _job(50, JobState.SUCCESS, completed_minutes=2, path=OTHER_PATH)
+
+    await _refresh(hass, jobs=(RUNNING_JOB, SUCCESS_JOB, unobserved))
+
+    # The out-of-scope completion is filtered before retention; nothing fired and the
+    # watermark still sits at the in-scope completion.
+    assert hass.states.get("event.home_assistant_run").state == STATE_UNKNOWN
+
+    hass.config_entries.async_update_entry(
+        entry, options={**RUN_OPTIONS, OPT_RUN_SCOPE: RUN_SCOPE_ALL}
+    )
+    changes = async_capture_events(hass, EVENT_STATE_CHANGED)
+    with patched_client(jobs=(RUNNING_JOB, SUCCESS_JOB, unobserved)):
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+
+    fired = _fired_run_events(changes)
+    assert len(fired) == 1
+    published = fired[0].data["new_state"]
+    assert published.attributes["event_type"] == "success"
+    assert published.attributes["job_id"] == unobserved.id
+
+    await _refresh(hass, jobs=(RUNNING_JOB, SUCCESS_JOB, unobserved), minutes=4)
+
+    # Adopted into the retention: the completion never fires again.
+    assert hass.states.get("event.home_assistant_run").state == published.state
+    assert (
+        hass.states.get("sensor.home_assistant_last_successful_run").state
+        == (BASE_TIME + timedelta(minutes=2)).isoformat()
+    )

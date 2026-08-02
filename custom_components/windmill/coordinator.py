@@ -41,10 +41,15 @@ from .api import (
 )
 from .const import (
     DEFAULT_RATE_LIMIT_BACKOFF_SECONDS,
+    DEFAULT_RUN_SCOPE,
     DOMAIN,
     MAX_RATE_LIMIT_BACKOFF_SECONDS,
     MAX_SELECTED_RUNNABLES,
     MAX_TRACKED_JOBS,
+    OPT_RUN_SCOPE,
+    RUN_SCOPE_SELECTED,
+    RUN_SCOPE_STARTED,
+    RUN_SCOPES,
     TRACKED_JOB_TTL_HOURS,
 )
 
@@ -136,6 +141,20 @@ class RunObservationState:
     last_success: datetime | None = None
     last_failure: datetime | None = None
     initialized: bool = False
+    scope: str = DEFAULT_RUN_SCOPE
+
+    def align_scope(self, scope: str) -> None:
+        """Reset the scoped timestamps when the configured scope changed.
+
+        The watermark, the seen identifiers and the initialization flag are kept on purpose:
+        they are what stops a scope change from replaying historical completions as new
+        events. Only the last-run timestamps are scoped per definition, so they restart.
+        """
+        if self.scope == scope:
+            return
+        self.scope = scope
+        self.last_success = None
+        self.last_failure = None
 
     def remember(self, job: WindmillJob) -> bool:
         """Record one completion and return whether it was newly observed."""
@@ -162,6 +181,7 @@ class RunObservationState:
             "last_success": _isoformat(self.last_success),
             "last_failure": _isoformat(self.last_failure),
             "initialized": self.initialized,
+            "scope": self.scope,
         }
 
     @classmethod
@@ -177,6 +197,9 @@ class RunObservationState:
         if isinstance(seen, list):
             state.seen.extend(str(job_id) for job_id in seen[-MAX_SEEN_JOBS:])
         state.initialized = data.get("initialized") is True
+        scope = data.get("scope")
+        if isinstance(scope, str) and scope in RUN_SCOPES:
+            state.scope = scope
         return state
 
     @staticmethod
@@ -380,6 +403,12 @@ class WindmillRunSnapshot:
     new_events: tuple[WindmillRunEvent, ...] = ()
 
 
+def run_scope_from_options(options: Mapping[str, Any]) -> str:
+    """Return the configured run scope, falling back to the safe default."""
+    scope = str(options.get(OPT_RUN_SCOPE, DEFAULT_RUN_SCOPE))
+    return scope if scope in RUN_SCOPES else DEFAULT_RUN_SCOPE
+
+
 class WindmillRunCoordinator(WindmillCoordinator[WindmillRunSnapshot]):
     """Observe bounded top-level run activity without one entity per job."""
 
@@ -390,6 +419,10 @@ class WindmillRunCoordinator(WindmillCoordinator[WindmillRunSnapshot]):
         client: WindmillClient,
         store: Store[dict[str, Any]],
         state: RunObservationState,
+        *,
+        scope: str,
+        selected: frozenset[tuple[str, str]],
+        started_jobs: StartedJobRegistry,
     ) -> None:
         """Initialize the config-entry-owned run coordinator."""
         super().__init__(
@@ -402,6 +435,9 @@ class WindmillRunCoordinator(WindmillCoordinator[WindmillRunSnapshot]):
         self.client = client
         self._store = store
         self._state = state
+        self._scope = scope
+        self._selected = selected
+        self._started_jobs = started_jobs
 
     async def _async_observe(self) -> WindmillRunSnapshot:
         """Walk bounded job pages, aggregate them and derive new completion events."""
@@ -431,13 +467,26 @@ class WindmillRunCoordinator(WindmillCoordinator[WindmillRunSnapshot]):
         completions = [job.completed_at for job in rows if job.completed_at is not None]
         return bool(completions) and max(completions) <= watermark
 
+    def _in_scope(self, job: WindmillJob) -> bool:
+        """Return whether one parsed job belongs to the configured observation scope.
+
+        Only the bounded job projection is consulted: the runnable key for a selection
+        match and the job identifier for a started-by-Home-Assistant match.
+        """
+        if self._scope == RUN_SCOPE_SELECTED:
+            return job.path is not None and (job.kind, job.path) in self._selected
+        if self._scope == RUN_SCOPE_STARTED:
+            return self._started_jobs.get(job.id) is not None
+        return True
+
     def _observe(self, jobs: list[WindmillJob]) -> WindmillRunSnapshot:
-        """Aggregate counts and turn unseen completions into bounded events."""
-        running = sum(1 for job in jobs if job.state is JobState.RUNNING)
-        queued = sum(1 for job in jobs if job.state is JobState.QUEUED)
+        """Aggregate the scoped window and turn unseen completions into bounded events."""
+        scoped = [job for job in jobs if self._in_scope(job)]
+        running = sum(1 for job in scoped if job.state is JobState.RUNNING)
+        queued = sum(1 for job in scoped if job.state is JobState.QUEUED)
         completions = [
             (job.completed_at, job.id, job)
-            for job in jobs
+            for job in scoped
             if job.is_completed and job.completed_at is not None
         ]
         completions.sort(key=lambda entry: (entry[0], entry[1]))
