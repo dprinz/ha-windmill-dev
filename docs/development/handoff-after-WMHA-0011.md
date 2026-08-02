@@ -2,7 +2,7 @@
 
 - Handoff date: 2026-08-02
 - Repository state: `main` at `2ade4a2`, pushed to `origin/main`
-- Next ticket: `WMHA-0012` (still in `tickets/backlog/`; not activated)
+- Next ticket: `WMHA-0018` (in `tickets/ready/`; activated 2026-08-02 by the independent review)
 - Last completed ticket: `WMHA-0011`
 - Supersedes: `docs/development/handoff-after-WMHA-0003.md`
 
@@ -12,14 +12,17 @@ Read these files in order before changing anything:
 
 1. `AGENTS.md`
 2. `docs/context-map.md`
-3. `tickets/backlog/WMHA-0012-diagnostics-repairs-resilience.md`
+3. `tickets/ready/WMHA-0018-run-event-emission-defect.md`
 4. `docs/product/requirements.md`
 5. `docs/architecture/decisions/0001-capability-negotiation.md`
 6. `docs/research/windmill-api-contract.md`
 7. The directly affected source and test files named below
 
-There is intentionally no active ticket. Activate WMHA-0012 according to `AGENTS.md` and create
-`plans/WMHA-0012.md` before implementing.
+There is intentionally no in-progress ticket. Activate WMHA-0018 according to `AGENTS.md` and create
+`plans/WMHA-0018.md` before implementing.
+
+WMHA-0012 is no longer the next ticket. The independent review of 2026-08-02 changed the order; see
+the section below.
 
 ## Completed since the previous handoff
 
@@ -77,13 +80,41 @@ The full suite is 346 tests at 96.95% coverage. Ruff, formatting, mypy, `uv lock
 - WMHA-0017 is a new backlog ticket for run-observation scope selection, which needs the selection
   from WMHA-0008 and the registry from WMHA-0010.
 
-## Process deviation to correct
+## Process deviation, and the review that closed it
 
 `AGENTS.md` requires an independent review for medium- and high-risk work. WMHA-0004 through
 WMHA-0011 were reviewed only by a separate review pass inside the implementing session, because the
 session was not permitted to spawn a reviewing agent. Each ticket records this deviation in its
-review evidence. A fresh session should re-review at least the high-risk tickets WMHA-0006,
-WMHA-0007, WMHA-0009 and WMHA-0010 before the WMHA-0015 release gate.
+review evidence.
+
+A fresh session performed the missing independent review of WMHA-0006, WMHA-0007, WMHA-0009 and
+WMHA-0010 on 2026-08-02. It re-ran every recorded validation command; all reproduce, and the
+recorded evidence in those tickets is accurate. It confirmed the credential hygiene, the client
+allowlists, the watermark pagination, the pre-network argument validation and the completeness of
+the error translation keys.
+
+It also found four issues, three of them reproduced with throw-away tests against the current code:
+
+| New ticket | Finding | Severity |
+| --- | --- | --- |
+| `WMHA-0018` | A poll observing several new completions publishes only the newest; the others are lost silently. Also an unsupervised forget task. | high |
+| `WMHA-0019` | Button-started jobs never enter the started-job registry, so they are not cancellable and report `started_by_home_assistant: false`. | medium |
+| `WMHA-0020` | No `async_remove_entry`, so both per-entry stores survive removal of the integration. | medium |
+| `WMHA-0021` | The setup-time worker entity lifecycle and its reload requirement are undocumented. | low |
+
+WMHA-0006 through WMHA-0010 stay in `tickets/done/`, which is append-only; these four tickets carry
+the corrections.
+
+### Resulting order
+
+`WMHA-0018` → `WMHA-0019` → `WMHA-0020` → `WMHA-0012`, with `WMHA-0021` whenever it fits.
+
+WMHA-0012 is `risk: high` and declares `depends_on` on WMHA-0006 and WMHA-0007, two of the reviewed
+tickets. Building it on dependencies with three confirmed unfixed defects is the case the ordering
+rule exists for. There is also a direct collision: WMHA-0012 aims to make failures explainable, but
+an unfixed WMHA-0019 means a diagnostics dump would show a registry that is silently missing
+button-started jobs, and an unfixed WMHA-0020 means WMHA-0012 must decide what belongs in a redacted
+dump before the lifecycle of that same data is settled. WMHA-0021 blocks nothing.
 
 ## Validation commands
 
