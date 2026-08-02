@@ -113,6 +113,32 @@
       },
       "worker_instance_alive": {
         "name": "Workers on {subject}"
+      },
+      "workspace_running_jobs": {
+        "name": "Running jobs (workspace)"
+      },
+      "workspace_queued_jobs": {
+        "name": "Queued jobs (workspace)"
+      },
+      "last_successful_run": {
+        "name": "Last successful run"
+      },
+      "last_failed_run": {
+        "name": "Last failed run"
+      }
+    },
+    "event": {
+      "run": {
+        "name": "Run",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "success": "Success",
+              "failure": "Failure",
+              "canceled": "Canceled"
+            }
+          }
+        }
       }
     }
   },

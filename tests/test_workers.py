@@ -26,6 +26,7 @@ from custom_components.windmill.api import (
 from custom_components.windmill.const import (
     DOMAIN,
     OPT_INSTANCE_HEALTH,
+    OPT_RUN_OBSERVATION,
     OPT_WORKER_DETAILS,
     OPT_WORKER_GROUPS,
 )
@@ -46,6 +47,7 @@ WORKERS = (
 GROUPS = ("default", "gpu", "reporting")
 WORKER_OPTIONS = {
     OPT_INSTANCE_HEALTH: False,
+    OPT_RUN_OBSERVATION: False,
     OPT_WORKER_GROUPS: True,
     OPT_WORKER_DETAILS: True,
 }
@@ -64,6 +66,7 @@ def patched_client(
     capabilities: Any = None,
     workers: Any = WORKERS,
     groups: Any = GROUPS,
+    jobs: Any = (),
 ) -> Iterator[dict[str, AsyncMock]]:
     """Patch every Windmill call a worker-enabled config entry performs."""
     mocks = {
@@ -71,6 +74,7 @@ def patched_client(
         "capabilities": _as_mock(capabilities if capabilities is not None else _capabilities()),
         "workers": _as_mock(workers),
         "groups": _as_mock(groups),
+        "jobs": _as_mock(jobs),
     }
     targets = {
         "connect": "custom_components.windmill.api.WindmillClient.async_connect",
@@ -81,6 +85,7 @@ def patched_client(
         "groups": (
             "custom_components.windmill.api.WindmillInstanceClient.async_list_worker_groups"
         ),
+        "jobs": "custom_components.windmill.api.WindmillClient.async_list_jobs",
     }
     with ExitStack() as stack:
         for key, target in targets.items():
@@ -273,7 +278,10 @@ async def test_full_pages_are_walked_until_the_bounded_limit(hass: HomeAssistant
 
 @pytest.mark.parametrize(
     "options",
-    [{OPT_INSTANCE_HEALTH: False}, {OPT_INSTANCE_HEALTH: False, OPT_WORKER_GROUPS: False}],
+    [
+        {OPT_INSTANCE_HEALTH: False, OPT_RUN_OBSERVATION: False},
+        {OPT_INSTANCE_HEALTH: False, OPT_RUN_OBSERVATION: False, OPT_WORKER_GROUPS: False},
+    ],
 )
 async def test_worker_monitoring_stays_off_without_opt_in(
     hass: HomeAssistant, options: dict[str, bool]

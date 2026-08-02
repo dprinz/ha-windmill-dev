@@ -117,6 +117,10 @@ async def test_setup_unload_and_reload(hass: HomeAssistant) -> None:
             new=AsyncMock(return_value=HEALTH),
         ),
         patch(
+            "custom_components.windmill.api.WindmillClient.async_list_jobs",
+            new=AsyncMock(return_value=()),
+        ),
+        patch(
             "custom_components.windmill.coordinator.WindmillCapabilityCoordinator.async_shutdown",
             new=track_shutdown,
         ),
@@ -206,6 +210,10 @@ async def test_capability_coordinator_setup_error_mapping(
         patch(
             "custom_components.windmill.api.WindmillInstanceClient.async_get_health_status",
             new=AsyncMock(return_value=HEALTH),
+        ),
+        patch(
+            "custom_components.windmill.api.WindmillClient.async_list_jobs",
+            new=AsyncMock(return_value=()),
         ),
     ):
         assert not await hass.config_entries.async_setup(entry.entry_id)

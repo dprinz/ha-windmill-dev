@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from datetime import UTC, datetime
 from http import HTTPStatus
 
 import aiohttp
@@ -10,6 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from custom_components.windmill.api import (
+    JobState,
     PageRequest,
     WindmillAuthenticationError,
     WindmillAuthorizationError,
@@ -758,3 +760,127 @@ async def test_worker_reads_keep_failures_distinct(
         await client.async_list_workers(PageRequest(page=1, per_page=2))
     with pytest.raises(exception_type):
         await client.async_list_worker_groups()
+
+
+JOBS_URL = (
+    f"{BASE_URL}/api/w/{WORKSPACE}/jobs/list"
+    "?page=1&per_page=2&has_null_parent=true&is_flow_step=false"
+)
+COMPLETED_ROW = {
+    "type": "CompletedJob",
+    "id": "00000000-0000-4000-8000-000000000002",
+    "created_at": "2026-08-02T10:00:00Z",
+    "started_at": "2026-08-02T10:00:01Z",
+    "completed_at": "2026-08-02T10:01:00Z",
+    "duration_ms": 59000,
+    "success": False,
+    "canceled": False,
+    "job_kind": "flow",
+    "script_path": "f/example/night",
+    "args": {"secret": "must-not-be-retained"},
+    "result": {"token": "must-not-be-retained"},
+    "logs": "must-not-be-retained",
+    "email": "must-not-be-retained@example.invalid",
+    "permissioned_as": "u/example",
+    "tag": "flow",
+}
+QUEUED_ROW = {
+    "type": "QueuedJob",
+    "id": "00000000-0000-4000-8000-000000000001",
+    "created_at": "2026-08-02T10:00:00Z",
+    "running": True,
+    "canceled": False,
+    "job_kind": "script",
+    "script_path": "u/example/lights",
+    "args": {"secret": "must-not-be-retained"},
+}
+
+
+async def test_job_listing_keeps_metadata_and_drops_payloads(
+    hass: HomeAssistant, aioclient_mock: object
+) -> None:
+    """Job rows keep bounded metadata and never retain arguments, results or logs."""
+    aioclient_mock.get(  # type: ignore[attr-defined]
+        JOBS_URL,
+        json=[QUEUED_ROW, COMPLETED_ROW],
+        headers=JSON_HEADERS,
+    )
+    client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
+
+    jobs = await client.async_list_jobs(PageRequest(page=1, per_page=2))
+
+    assert [job.state for job in jobs] == [JobState.RUNNING, JobState.FAILURE]
+    assert jobs[1].completed_at == datetime(2026, 8, 2, 10, 1, tzinfo=UTC)
+    assert jobs[1].duration_ms == 59000
+    assert jobs[1].path == "f/example/night"
+    assert "must-not-be-retained" not in repr(jobs)
+
+
+@pytest.mark.parametrize(
+    ("row", "expected"),
+    [
+        ({**QUEUED_ROW, "running": False}, JobState.QUEUED),
+        ({**COMPLETED_ROW, "success": True}, JobState.SUCCESS),
+        ({**COMPLETED_ROW, "success": True, "canceled": True}, JobState.CANCELED),
+        ({**COMPLETED_ROW, "completed_at": None}, JobState.FAILURE),
+    ],
+)
+async def test_job_state_mapping(
+    hass: HomeAssistant, aioclient_mock: object, row: dict, expected: JobState
+) -> None:
+    """Queued, running, successful, failed and canceled rows map to bounded states."""
+    aioclient_mock.get(JOBS_URL, json=[row], headers=JSON_HEADERS)  # type: ignore[attr-defined]
+    client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
+
+    jobs = await client.async_list_jobs(PageRequest(page=1, per_page=2))
+
+    assert jobs[0].state is expected
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"id": "00000000-0000-4000-8000-000000000001"},
+        ["job"],
+        [{**QUEUED_ROW, "id": "not-a-uuid"}],
+        [{**QUEUED_ROW, "job_kind": ""}],
+        [{**QUEUED_ROW, "script_path": 42}],
+        [{**QUEUED_ROW, "created_at": "not-a-time"}],
+        [{**QUEUED_ROW, "running": "yes"}],
+        [{**QUEUED_ROW, "canceled": "no"}],
+        [{**COMPLETED_ROW, "success": "yes"}],
+        [{**COMPLETED_ROW, "duration_ms": -1}],
+        [QUEUED_ROW, COMPLETED_ROW, QUEUED_ROW],
+    ],
+)
+async def test_job_listing_rejects_invalid_models(
+    hass: HomeAssistant, aioclient_mock: object, body: object
+) -> None:
+    """A malformed or oversized job page fails closed."""
+    aioclient_mock.get(JOBS_URL, json=body, headers=JSON_HEADERS)  # type: ignore[attr-defined]
+    client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
+
+    with pytest.raises(WindmillProtocolError):
+        await client.async_list_jobs(PageRequest(page=1, per_page=2))
+
+
+@pytest.mark.parametrize(
+    ("status", "exception_type"),
+    [
+        (HTTPStatus.UNAUTHORIZED, WindmillAuthenticationError),
+        (HTTPStatus.FORBIDDEN, WindmillAuthorizationError),
+        (HTTPStatus.TOO_MANY_REQUESTS, WindmillRateLimitError),
+    ],
+)
+async def test_job_listing_status_mapping(
+    hass: HomeAssistant,
+    aioclient_mock: object,
+    status: HTTPStatus,
+    exception_type: type[Exception],
+) -> None:
+    """Job listing keeps authentication, permission and rate-limit failures distinct."""
+    aioclient_mock.get(JOBS_URL, status=status)  # type: ignore[attr-defined]
+    client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
+
+    with pytest.raises(exception_type):
+        await client.async_list_jobs(PageRequest(page=1, per_page=2))

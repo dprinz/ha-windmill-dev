@@ -72,13 +72,14 @@ def _capabilities(
     health: CapabilityAvailability = AVAILABLE,
     detailed: CapabilityAvailability = AVAILABLE,
     workers: CapabilityAvailability = AVAILABLE,
+    runs: CapabilityAvailability = AVAILABLE,
 ) -> CapabilityMatrix:
     """Build a capability matrix with the capabilities under test."""
     return CapabilityMatrix(
         health=health,
         detailed_health=detailed,
         workers=workers,
-        runs=AVAILABLE,
+        runs=runs,
         script_discovery=AVAILABLE,
         flow_discovery=AVAILABLE,
         script_execution=CONTEXT_REQUIRED,
@@ -117,6 +118,7 @@ def patched_client(
     capabilities: Any = None,
     health: Any = HEALTH,
     detailed: Any = DETAILED,
+    jobs: Any = (),
 ) -> Iterator[dict[str, AsyncMock]]:
     """Patch every Windmill call the config entry performs."""
     mocks = {
@@ -124,6 +126,7 @@ def patched_client(
         "capabilities": _as_mock(capabilities if capabilities is not None else _capabilities()),
         "health": _as_mock(health),
         "detailed": _as_mock(detailed),
+        "jobs": _as_mock(jobs),
     }
     targets = {
         "connect": "custom_components.windmill.api.WindmillClient.async_connect",
@@ -134,6 +137,7 @@ def patched_client(
         "detailed": (
             "custom_components.windmill.api.WindmillInstanceClient.async_get_detailed_health"
         ),
+        "jobs": "custom_components.windmill.api.WindmillClient.async_list_jobs",
     }
     with ExitStack() as stack:
         for key, target in targets.items():
@@ -193,7 +197,7 @@ async def test_health_entities_use_one_service_device(hass: HomeAssistant) -> No
     assert device.manufacturer == "Windmill"
 
     entities = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
-    assert len(entities) == 5
+    assert len(entities) == 10
     assert {registered.device_id for registered in entities} == {device.id}
     assert all(registered.unique_id.startswith(entry.entry_id) for registered in entities)
 

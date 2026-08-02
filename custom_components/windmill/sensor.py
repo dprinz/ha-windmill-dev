@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
@@ -10,7 +12,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from . import WindmillConfigEntry
 from .api import WindmillHealthState
 from .const import FEATURE_DEFAULTS, OPT_WORKER_DETAILS, OPT_WORKER_GROUPS
-from .entity import WindmillHealthEntity, WindmillWorkerEntity
+from .entity import WindmillHealthEntity, WindmillRunEntity, WindmillWorkerEntity
 from .models import WindmillRuntimeData
 
 HEALTH_STATES = [state.value for state in WindmillHealthState]
@@ -26,6 +28,7 @@ async def async_setup_entry(
     entities: list[SensorEntity] = []
     entities.extend(_health_sensors(entry, runtime))
     entities.extend(_worker_sensors(entry, runtime))
+    entities.extend(_run_sensors(entry, runtime))
     async_add_entities(entities)
 
 
@@ -73,6 +76,19 @@ def _worker_sensors(entry: WindmillConfigEntry, runtime: WindmillRuntimeData) ->
             for instance in sorted(coordinator.data.instances)
         )
     return sensors
+
+
+def _run_sensors(entry: WindmillConfigEntry, runtime: WindmillRuntimeData) -> list[SensorEntity]:
+    """Build the aggregate run sensors; runs never get one entity per job."""
+    coordinator = runtime.run_coordinator
+    if coordinator is None:
+        return []
+    return [
+        WindmillRunningRunsSensor(coordinator, entry.entry_id, entry.title, runtime),
+        WindmillQueuedRunsSensor(coordinator, entry.entry_id, entry.title, runtime),
+        WindmillLastSuccessSensor(coordinator, entry.entry_id, entry.title, runtime),
+        WindmillLastFailureSensor(coordinator, entry.entry_id, entry.title, runtime),
+    ]
 
 
 def _enabled(entry: WindmillConfigEntry, option: str) -> bool:
@@ -181,3 +197,51 @@ class WindmillWorkerInstanceSensor(WindmillWorkerEntity, SensorEntity):
     def native_value(self) -> int:
         """Return zero once an instance stops reporting instead of removing the entity."""
         return self.coordinator.data.instances.get(self._subject, 0)
+
+
+class WindmillRunningRunsSensor(WindmillRunEntity, SensorEntity):
+    """Report how many observed top-level jobs are currently running."""
+
+    _key = "workspace_running_jobs"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> int:
+        """Return the running job count of the observed window."""
+        return self.coordinator.data.running
+
+
+class WindmillQueuedRunsSensor(WindmillRunEntity, SensorEntity):
+    """Report how many observed top-level jobs are waiting to start."""
+
+    _key = "workspace_queued_jobs"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> int:
+        """Return the queued job count of the observed window."""
+        return self.coordinator.data.queued
+
+
+class WindmillLastSuccessSensor(WindmillRunEntity, SensorEntity):
+    """Report when a top-level job last completed successfully."""
+
+    _key = "last_successful_run"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    @property
+    def native_value(self) -> datetime | None:
+        """Return the monotonic last successful completion timestamp."""
+        return self.coordinator.data.last_success
+
+
+class WindmillLastFailureSensor(WindmillRunEntity, SensorEntity):
+    """Report when a top-level job last failed."""
+
+    _key = "last_failed_run"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    @property
+    def native_value(self) -> datetime | None:
+        """Return the monotonic last failed completion timestamp."""
+        return self.coordinator.data.last_failure

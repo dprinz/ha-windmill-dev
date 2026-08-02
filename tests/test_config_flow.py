@@ -143,6 +143,7 @@ def patched_client(
     detailed: Any = DETAILED_HEALTH,
     workers: Any = (),
     worker_groups: Any = (),
+    jobs: Any = (),
 ) -> Iterator[dict[str, AsyncMock]]:
     """Patch every network operation the flows may perform."""
     mocks = {
@@ -154,6 +155,7 @@ def patched_client(
         "detailed": _as_mock(detailed),
         "workers": _as_mock(workers),
         "worker_groups": _as_mock(worker_groups),
+        "jobs": _as_mock(jobs),
     }
     targets = {
         "server": "custom_components.windmill.api.WindmillInstanceClient.async_get_server_info",
@@ -168,6 +170,7 @@ def patched_client(
         "worker_groups": (
             "custom_components.windmill.api.WindmillInstanceClient.async_list_worker_groups"
         ),
+        "jobs": "custom_components.windmill.api.WindmillClient.async_list_jobs",
     }
     with ExitStack() as stack:
         for key, target in targets.items():

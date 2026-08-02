@@ -10,6 +10,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.storage import Store
 
 from .api import (
     CapabilityAvailability,
@@ -30,15 +31,20 @@ from .const import (
     CONF_BASE_URL,
     CONF_TOKEN,
     CONF_WORKSPACE,
+    DOMAIN,
     FEATURE_DEFAULTS,
     OPT_DETAILED_HEALTH,
     OPT_INSTANCE_HEALTH,
+    OPT_RUN_OBSERVATION,
     OPT_WORKER_DETAILS,
     OPT_WORKER_GROUPS,
 )
 from .coordinator import (
+    RUN_STORAGE_VERSION,
+    RunObservationState,
     WindmillCapabilityCoordinator,
     WindmillHealthCoordinator,
+    WindmillRunCoordinator,
     WindmillWorkerCoordinator,
 )
 from .models import WindmillRuntimeData
@@ -47,7 +53,7 @@ _LOGGER = logging.getLogger(__name__)
 
 type WindmillConfigEntry = ConfigEntry[WindmillRuntimeData]
 
-PLATFORMS = [Platform.BINARY_SENSOR, Platform.SENSOR]
+PLATFORMS = [Platform.BINARY_SENSOR, Platform.EVENT, Platform.SENSOR]
 
 
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
@@ -108,12 +114,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: WindmillConfigEntry) -> 
         )
         await worker_coordinator.async_config_entry_first_refresh()
 
+    run_coordinator: WindmillRunCoordinator | None = None
+    if _feature_enabled(entry, OPT_RUN_OBSERVATION) and _supported(capabilities.runs):
+        store: Store[dict[str, Any]] = Store(
+            hass, RUN_STORAGE_VERSION, f"{DOMAIN}.runs.{entry.entry_id}"
+        )
+        run_coordinator = WindmillRunCoordinator(
+            hass,
+            entry,
+            client,
+            store,
+            RunObservationState.from_dict(await store.async_load()),
+        )
+        await run_coordinator.async_config_entry_first_refresh()
+
     entry.runtime_data = WindmillRuntimeData(
         client=client,
         connection=connection,
         capability_coordinator=capability_coordinator,
         health_coordinator=health_coordinator,
         worker_coordinator=worker_coordinator,
+        run_coordinator=run_coordinator,
     )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True

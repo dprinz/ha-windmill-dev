@@ -6,7 +6,11 @@ from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import WindmillHealthCoordinator, WindmillWorkerCoordinator
+from .coordinator import (
+    WindmillHealthCoordinator,
+    WindmillRunCoordinator,
+    WindmillWorkerCoordinator,
+)
 from .models import WindmillRuntimeData
 
 
@@ -63,4 +67,24 @@ class WindmillWorkerEntity(CoordinatorEntity[WindmillWorkerCoordinator]):
         self._attr_unique_id = f"{entry_id}_{self._key}_{subject}"
         self._attr_translation_key = self._key
         self._attr_translation_placeholders = {"subject": subject}
+        self._attr_device_info = build_device_info(entry_id, title, runtime)
+
+
+class WindmillRunEntity(CoordinatorEntity[WindmillRunCoordinator]):
+    """Base entity for values derived from one shared run snapshot."""
+
+    _attr_has_entity_name = True
+    _key: str
+
+    def __init__(
+        self,
+        coordinator: WindmillRunCoordinator,
+        entry_id: str,
+        title: str,
+        runtime: WindmillRuntimeData,
+    ) -> None:
+        """Attach the entity to the shared coordinator and the instance device."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry_id}_{self._key}"
+        self._attr_translation_key = self._key
         self._attr_device_info = build_device_info(entry_id, title, runtime)

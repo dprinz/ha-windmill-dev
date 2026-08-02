@@ -3,24 +3,28 @@
 from __future__ import annotations
 
 import logging
+from collections import deque
 from collections.abc import Mapping
-from dataclasses import dataclass
-from datetime import timedelta
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import (
     CapabilityMatrix,
+    JobState,
     PageRequest,
     WindmillAuthenticationError,
     WindmillClient,
     WindmillDetailedHealth,
     WindmillError,
     WindmillHealthStatus,
+    WindmillJob,
     WindmillWorker,
 )
 from .const import DOMAIN
@@ -31,6 +35,82 @@ HEALTH_UPDATE_INTERVAL = timedelta(seconds=60)
 WORKER_UPDATE_INTERVAL = timedelta(minutes=2)
 WORKER_PAGE_SIZE = 100
 MAX_WORKER_PAGES = 5
+RUN_UPDATE_INTERVAL = timedelta(seconds=60)
+RUN_PAGE_SIZE = 100
+MAX_RUN_PAGES = 3
+MAX_SEEN_JOBS = 200
+RUN_STORAGE_VERSION = 1
+
+
+@dataclass
+class RunObservationState:
+    """Bounded retention model that prevents replayed and duplicated run events."""
+
+    watermark: datetime | None = None
+    seen: deque[str] = field(default_factory=lambda: deque(maxlen=MAX_SEEN_JOBS))
+    last_success: datetime | None = None
+    last_failure: datetime | None = None
+
+    def remember(self, job: WindmillJob) -> bool:
+        """Record one completion and return whether it was newly observed."""
+        completed_at = job.completed_at
+        if completed_at is None or job.id in self.seen:
+            return False
+        if self.watermark is not None and completed_at < self.watermark:
+            return False
+        self.seen.append(job.id)
+        self.watermark = (
+            completed_at if self.watermark is None else max(self.watermark, completed_at)
+        )
+        if job.state is JobState.SUCCESS:
+            self.last_success = self._advance(self.last_success, completed_at)
+        elif job.state is JobState.FAILURE:
+            self.last_failure = self._advance(self.last_failure, completed_at)
+        return True
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the JSON-serializable retention state."""
+        return {
+            "watermark": _isoformat(self.watermark),
+            "seen": list(self.seen),
+            "last_success": _isoformat(self.last_success),
+            "last_failure": _isoformat(self.last_failure),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> RunObservationState:
+        """Restore retention state, discarding anything unreadable."""
+        state = cls()
+        if not isinstance(data, dict):
+            return state
+        state.watermark = _parse_stored_timestamp(data.get("watermark"))
+        state.last_success = _parse_stored_timestamp(data.get("last_success"))
+        state.last_failure = _parse_stored_timestamp(data.get("last_failure"))
+        seen = data.get("seen")
+        if isinstance(seen, list):
+            state.seen.extend(str(job_id) for job_id in seen[-MAX_SEEN_JOBS:])
+        return state
+
+    @staticmethod
+    def _advance(current: datetime | None, candidate: datetime) -> datetime:
+        """Move a last-run timestamp forward only."""
+        return candidate if current is None else max(current, candidate)
+
+
+def _isoformat(value: datetime | None) -> str | None:
+    """Return an ISO-8601 string for storage."""
+    return None if value is None else value.isoformat()
+
+
+def _parse_stored_timestamp(value: Any) -> datetime | None:
+    """Parse a stored timestamp and ignore anything unreadable."""
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,3 +268,109 @@ class WindmillWorkerCoordinator(DataUpdateCoordinator[WindmillWorkerSnapshot]):
             for group, alive in counts.items()
         }
         return WindmillWorkerSnapshot(groups=groups, instances=instances)
+
+
+@dataclass(frozen=True, slots=True)
+class WindmillRunEvent:
+    """One newly observed completion that an event entity may publish."""
+
+    job_id: str
+    state: JobState
+    kind: str
+    path: str | None
+    duration_ms: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class WindmillRunSnapshot:
+    """One immutable run observation shared by every run entity."""
+
+    running: int
+    queued: int
+    last_success: datetime | None
+    last_failure: datetime | None
+    new_events: tuple[WindmillRunEvent, ...] = ()
+
+
+class WindmillRunCoordinator(DataUpdateCoordinator[WindmillRunSnapshot]):
+    """Observe bounded top-level run activity without one entity per job."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry[Any],
+        client: WindmillClient,
+        store: Store[dict[str, Any]],
+        state: RunObservationState,
+    ) -> None:
+        """Initialize the config-entry-owned run coordinator."""
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=f"{DOMAIN} runs",
+            config_entry=entry,
+            update_interval=RUN_UPDATE_INTERVAL,
+        )
+        self.client = client
+        self._store = store
+        self._state = state
+
+    async def _async_update_data(self) -> WindmillRunSnapshot:
+        """Walk bounded job pages, aggregate them and derive new completion events."""
+        jobs: list[WindmillJob] = []
+        try:
+            for page in range(1, MAX_RUN_PAGES + 1):
+                rows = await self.client.async_list_jobs(
+                    PageRequest(page=page, per_page=RUN_PAGE_SIZE)
+                )
+                jobs.extend(rows)
+                if len(rows) < RUN_PAGE_SIZE or self._reached_watermark(rows):
+                    break
+        except WindmillAuthenticationError as err:
+            raise ConfigEntryAuthFailed("Windmill authentication failed") from err
+        except WindmillError as err:
+            raise UpdateFailed("Unable to refresh Windmill runs") from err
+
+        snapshot = self._observe(jobs)
+        await self._store.async_save(self._state.as_dict())
+        return snapshot
+
+    def _reached_watermark(self, rows: tuple[WindmillJob, ...]) -> bool:
+        """Return whether a page contains only completions at or below the watermark."""
+        watermark = self._state.watermark
+        if watermark is None:
+            return False
+        completions = [job.completed_at for job in rows if job.completed_at is not None]
+        return bool(completions) and max(completions) <= watermark
+
+    def _observe(self, jobs: list[WindmillJob]) -> WindmillRunSnapshot:
+        """Aggregate counts and turn unseen completions into bounded events."""
+        running = sum(1 for job in jobs if job.state is JobState.RUNNING)
+        queued = sum(1 for job in jobs if job.state is JobState.QUEUED)
+        completions = [
+            (job.completed_at, job.id, job)
+            for job in jobs
+            if job.is_completed and job.completed_at is not None
+        ]
+        completions.sort(key=lambda entry: (entry[0], entry[1]))
+
+        first_observation = self._state.watermark is None and not self._state.seen
+        events: list[WindmillRunEvent] = []
+        for _, _, job in completions:
+            if self._state.remember(job) and not first_observation:
+                events.append(
+                    WindmillRunEvent(
+                        job_id=job.id,
+                        state=job.state,
+                        kind=job.kind,
+                        path=job.path,
+                        duration_ms=job.duration_ms,
+                    )
+                )
+        return WindmillRunSnapshot(
+            running=running,
+            queued=queued,
+            last_success=self._state.last_success,
+            last_failure=self._state.last_failure,
+            new_events=tuple(events),
+        )

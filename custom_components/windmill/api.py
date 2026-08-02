@@ -12,6 +12,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, TypeIs
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
+from uuid import UUID
 
 import aiohttp
 
@@ -176,6 +177,34 @@ class WindmillDetailedHealth:
     running_jobs: int | None
 
 
+class JobState(StrEnum):
+    """Bounded run states derived from the job union."""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILURE = "failure"
+    CANCELED = "canceled"
+
+
+@dataclass(frozen=True, slots=True)
+class WindmillJob:
+    """Bounded non-sensitive projection of one top-level job."""
+
+    id: str
+    state: JobState
+    kind: str
+    path: str | None
+    created_at: datetime
+    completed_at: datetime | None
+    duration_ms: int | None
+
+    @property
+    def is_completed(self) -> bool:
+        """Return whether the job reached a terminal state."""
+        return self.state in {JobState.SUCCESS, JobState.FAILURE, JobState.CANCELED}
+
+
 @dataclass(frozen=True, slots=True)
 class WindmillWorker:
     """Bounded non-sensitive projection of one alive worker ping."""
@@ -260,6 +289,16 @@ def _is_bounded_text(value: Any) -> TypeIs[str]:
 def _is_count(value: Any) -> TypeIs[int]:
     """Return whether an untrusted value is a non-negative integer count."""
     return not isinstance(value, bool) and isinstance(value, int) and value >= 0
+
+
+def _is_uuid(value: Any) -> TypeIs[str]:
+    """Return whether an untrusted value is a canonical UUID string."""
+    if not isinstance(value, str):
+        return False
+    try:
+        return str(UUID(value)) == value.lower()
+    except ValueError:
+        return False
 
 
 def normalize_base_url(value: str) -> str:
@@ -869,6 +908,22 @@ class WindmillClient(WindmillInstanceClient):
             update_visibility=update_visibility,
         )
 
+    async def async_list_jobs(self, page: PageRequest) -> tuple[WindmillJob, ...]:
+        """Return one bounded page of top-level jobs without any sensitive payload."""
+        workspace = quote(self.workspace, safe="")
+        response = await self._async_get(
+            f"/api/w/{workspace}/jobs/list",
+            authenticated=True,
+            accept="application/json",
+            params={
+                **page.as_params(),
+                "has_null_parent": "true",
+                "is_flow_step": "false",
+            },
+        )
+        self._raise_for_status(response, not_found=WindmillNotFoundError)
+        return self._parse_jobs(self._decode_json(response), page.per_page)
+
     async def _async_get_identity(self) -> WindmillIdentity:
         """Validate the token and workspace through the verified whoami endpoint."""
         workspace = quote(self.workspace, safe="")
@@ -933,6 +988,69 @@ class WindmillClient(WindmillInstanceClient):
         return CapabilityAvailability(
             CapabilityStatus.NOT_APPLICABLE,
             CapabilityReason.CONTEXT_REQUIRED,
+        )
+
+    @classmethod
+    def _parse_jobs(cls, data: Any, limit: int) -> tuple[WindmillJob, ...]:
+        """Allowlist bounded job metadata and discard every payload field."""
+        if not isinstance(data, list) or len(data) > limit:
+            raise WindmillProtocolError("Windmill returned an invalid job list")
+        return tuple(cls._parse_job(row) for row in data)
+
+    @classmethod
+    def _parse_job(cls, row: Any) -> WindmillJob:
+        """Parse one job row, discriminating queued and completed rows structurally."""
+        if not isinstance(row, dict):
+            raise WindmillProtocolError("Windmill returned an invalid job")
+        identifier = row.get("id")
+        kind = row.get("job_kind")
+        path = row.get("script_path")
+        if not _is_uuid(identifier) or not _is_bounded_text(kind):
+            raise WindmillProtocolError("Windmill returned an invalid job")
+        if path is not None and not _is_bounded_text(path):
+            raise WindmillProtocolError("Windmill returned an invalid job path")
+        created_at = cls._parse_timestamp(row.get("created_at"), "job")
+        canceled = row.get("canceled", False)
+        if not isinstance(canceled, bool):
+            raise WindmillProtocolError("Windmill returned an invalid job cancellation flag")
+
+        if "success" in row:
+            success = row.get("success")
+            if not isinstance(success, bool):
+                raise WindmillProtocolError("Windmill returned an invalid job result flag")
+            state = (
+                JobState.CANCELED
+                if canceled
+                else (JobState.SUCCESS if success else JobState.FAILURE)
+            )
+            raw_completed = row.get("completed_at")
+            completed_at = (
+                None if raw_completed is None else cls._parse_timestamp(raw_completed, "job")
+            )
+            duration = row.get("duration_ms")
+            if duration is not None and not _is_count(duration):
+                raise WindmillProtocolError("Windmill returned an invalid job duration")
+            return WindmillJob(
+                id=str(identifier),
+                state=state,
+                kind=str(kind).strip(),
+                path=None if path is None else str(path).strip(),
+                created_at=created_at,
+                completed_at=completed_at,
+                duration_ms=duration,
+            )
+
+        running = row.get("running")
+        if not isinstance(running, bool):
+            raise WindmillProtocolError("Windmill returned an invalid job")
+        return WindmillJob(
+            id=str(identifier),
+            state=JobState.RUNNING if running else JobState.QUEUED,
+            kind=str(kind).strip(),
+            path=None if path is None else str(path).strip(),
+            created_at=created_at,
+            completed_at=None,
+            duration_ms=None,
         )
 
     @staticmethod
