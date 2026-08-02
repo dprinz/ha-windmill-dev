@@ -298,5 +298,19 @@
     "job_not_cancellable": {
       "message": "Job {job_id} is already finished or cannot be cancelled."
     }
+  },
+  "issues": {
+    "missing_permission": {
+      "title": "Windmill permission missing for an enabled feature",
+      "description": "The Windmill token used by this integration is not allowed to read `{capability}`, which the enabled `{feature}` feature needs. Grant the permission to the token in Windmill, or turn the feature off in the integration options. This message disappears on its own once the permission works again."
+    },
+    "unsupported_capability": {
+      "title": "Windmill does not support an enabled feature",
+      "description": "This Windmill instance does not offer the `{capability}` endpoint that the enabled `{feature}` feature needs, usually because the server is older than the feature. Upgrade Windmill, or turn the feature off in the integration options."
+    },
+    "worker_version_drift": {
+      "title": "Windmill worker group runs several versions",
+      "description": "The `{group}` worker group has been running {versions} different Windmill versions for more than 30 minutes. During a rolling upgrade this is expected and no message is shown; lasting drift usually means a worker failed to upgrade. Check the workers of that group in Windmill."
+    }
   }
 }

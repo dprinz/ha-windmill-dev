@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -54,6 +55,7 @@ from .coordinator import (
     async_run_store,
     load_selections,
 )
+from .issues import async_delete_issues, async_evaluate_issues
 from .models import WindmillRuntimeData
 from .services import async_register_services
 
@@ -173,6 +175,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: WindmillConfigEntry) -> 
         started_jobs=started_jobs,
         update_coordinator=update_coordinator,
     )
+    drift_since: dict[str, datetime] = {}
+
+    @callback
+    def _async_evaluate_issues() -> None:
+        """Re-derive this entry's repair issues from the current observations."""
+        async_evaluate_issues(hass, entry.entry_id, entry.options, entry.runtime_data, drift_since)
+
+    _async_evaluate_issues()
+    # Capabilities and worker versions are the two observations an issue depends on, so an issue
+    # disappears on its own once the user fixed the permission or finished the upgrade.
+    entry.async_on_unload(capability_coordinator.async_add_listener(_async_evaluate_issues))
+    if worker_coordinator is not None:
+        entry.async_on_unload(worker_coordinator.async_add_listener(_async_evaluate_issues))
+    # An unloaded entry cannot substantiate a warning; setup re-derives every issue.
+    entry.async_on_unload(lambda: async_delete_issues(hass, entry.entry_id))
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 

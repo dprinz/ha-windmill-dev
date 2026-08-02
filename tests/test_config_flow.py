@@ -545,6 +545,23 @@ async def test_reauth_updates_token_and_reloads(
     assert ROTATED_TOKEN not in caplog.text
 
 
+async def test_reauth_keeps_every_user_option(hass: HomeAssistant) -> None:
+    """A rotated credential must never cost the user their configured features."""
+    entry = await _add_loaded_entry(hass)
+    options = dict(entry.options)
+    assert options
+
+    with patched_client():
+        result = await entry.start_reauth_flow(hass)
+        await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_TOKEN: ROTATED_TOKEN}
+        )
+        await hass.async_block_till_done()
+
+    assert dict(entry.options) == options
+    assert entry.state is config_entries.ConfigEntryState.LOADED
+
+
 async def test_reauth_failure_keeps_stored_token(hass: HomeAssistant) -> None:
     """A rejected credential leaves the stored identity and token untouched."""
     entry = await _add_loaded_entry(hass)

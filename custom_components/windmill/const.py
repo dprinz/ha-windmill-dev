@@ -30,6 +30,13 @@ TRACKED_JOB_TTL_HOURS = 24
 
 MAX_SELECTED_RUNNABLES = 25
 
+# Windmill asked us to slow down: poll no faster than this until one refresh succeeds again.
+DEFAULT_RATE_LIMIT_BACKOFF_SECONDS = 300.0
+MAX_RATE_LIMIT_BACKOFF_SECONDS = 900.0
+
+# A rolling worker upgrade runs two versions for a while; only sustained drift is actionable.
+WORKER_DRIFT_GRACE_MINUTES = 30
+
 FEATURE_OPTIONS = (
     OPT_INSTANCE_HEALTH,
     OPT_DETAILED_HEALTH,

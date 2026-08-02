@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -32,13 +32,21 @@ from .api import (
     WindmillHealthStatus,
     WindmillJob,
     WindmillNotFoundError,
+    WindmillRateLimitError,
     WindmillRequestError,
     WindmillRunnable,
     WindmillUpdateStatus,
     WindmillWorker,
     normalize_runnable_path,
 )
-from .const import DOMAIN, MAX_SELECTED_RUNNABLES, MAX_TRACKED_JOBS, TRACKED_JOB_TTL_HOURS
+from .const import (
+    DEFAULT_RATE_LIMIT_BACKOFF_SECONDS,
+    DOMAIN,
+    MAX_RATE_LIMIT_BACKOFF_SECONDS,
+    MAX_SELECTED_RUNNABLES,
+    MAX_TRACKED_JOBS,
+    TRACKED_JOB_TTL_HOURS,
+)
 
 _LOGGER = logging.getLogger(__name__)
 CAPABILITY_UPDATE_INTERVAL = timedelta(hours=6)
@@ -73,6 +81,50 @@ ENTRY_STORES: tuple[Callable[[HomeAssistant, str], Store[dict[str, Any]]], ...] 
     async_run_store,
     async_job_store,
 )
+
+
+class WindmillCoordinator[DataT](DataUpdateCoordinator[DataT]):
+    """Shared polling behavior for every Windmill coordinator.
+
+    Home Assistant already throttles the logging of repeated refresh failures: the first failure is
+    logged at error level and every following one at debug level until a refresh succeeds. What it
+    does not do is slow down. When Windmill answers with a rate limit, polling at the normal
+    interval keeps producing requests the server has just refused, so the interval is stretched
+    until one refresh succeeds again.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Remember the configured interval so backoff can be undone exactly."""
+        super().__init__(*args, **kwargs)
+        self._base_interval = self.update_interval
+
+    async def _async_update_data(self) -> DataT:
+        """Observe once, applying rate-limit backoff and restoring it on recovery."""
+        try:
+            data = await self._async_observe()
+        except UpdateFailed as err:
+            self._async_apply_backoff(err.__cause__)
+            raise
+        if self.update_interval != self._base_interval:
+            self.update_interval = self._base_interval
+        return data
+
+    async def _async_observe(self) -> DataT:
+        """Perform one observation; subclasses implement this instead of `_async_update_data`."""
+        raise NotImplementedError
+
+    @callback
+    def _async_apply_backoff(self, cause: BaseException | None) -> None:
+        """Stretch the interval only when Windmill itself asked for it."""
+        if not isinstance(cause, WindmillRateLimitError):
+            return
+        requested = cause.retry_after or DEFAULT_RATE_LIMIT_BACKOFF_SECONDS
+        base = 0.0 if self._base_interval is None else self._base_interval.total_seconds()
+        seconds = min(max(requested, base), MAX_RATE_LIMIT_BACKOFF_SECONDS)
+        backoff = timedelta(seconds=seconds)
+        if self.update_interval != backoff:
+            _LOGGER.debug("Windmill rate limited %s; polling every %s", self.name, backoff)
+            self.update_interval = backoff
 
 
 @dataclass
@@ -173,7 +225,7 @@ class WindmillWorkerSnapshot:
     instances: Mapping[str, int]
 
 
-class WindmillCapabilityCoordinator(DataUpdateCoordinator[CapabilityMatrix]):
+class WindmillCapabilityCoordinator(WindmillCoordinator[CapabilityMatrix]):
     """Share a bounded capability snapshot across later platforms."""
 
     def __init__(
@@ -192,7 +244,7 @@ class WindmillCapabilityCoordinator(DataUpdateCoordinator[CapabilityMatrix]):
         )
         self.client = client
 
-    async def _async_update_data(self) -> CapabilityMatrix:
+    async def _async_observe(self) -> CapabilityMatrix:
         """Refresh the safe read-only capability matrix."""
         try:
             return await self.client.async_discover_capabilities()
@@ -202,7 +254,7 @@ class WindmillCapabilityCoordinator(DataUpdateCoordinator[CapabilityMatrix]):
             raise UpdateFailed("Unable to refresh Windmill capabilities") from err
 
 
-class WindmillHealthCoordinator(DataUpdateCoordinator[WindmillHealthSnapshot]):
+class WindmillHealthCoordinator(WindmillCoordinator[WindmillHealthSnapshot]):
     """Poll instance health once for every health entity of a config entry."""
 
     def __init__(
@@ -224,7 +276,7 @@ class WindmillHealthCoordinator(DataUpdateCoordinator[WindmillHealthSnapshot]):
         self.client = client
         self.detailed = detailed
 
-    async def _async_update_data(self) -> WindmillHealthSnapshot:
+    async def _async_observe(self) -> WindmillHealthSnapshot:
         """Refresh coarse health and, when enabled, the additive detailed health."""
         try:
             status = await self.client.async_get_health_status()
@@ -245,7 +297,7 @@ class WindmillHealthCoordinator(DataUpdateCoordinator[WindmillHealthSnapshot]):
         return WindmillHealthSnapshot(status=status, detailed=detailed)
 
 
-class WindmillWorkerCoordinator(DataUpdateCoordinator[WindmillWorkerSnapshot]):
+class WindmillWorkerCoordinator(WindmillCoordinator[WindmillWorkerSnapshot]):
     """Poll a bounded worker listing once for every worker entity."""
 
     def __init__(
@@ -267,7 +319,7 @@ class WindmillWorkerCoordinator(DataUpdateCoordinator[WindmillWorkerSnapshot]):
         self.client = client
         self.known_groups = known_groups
 
-    async def _async_update_data(self) -> WindmillWorkerSnapshot:
+    async def _async_observe(self) -> WindmillWorkerSnapshot:
         """Walk a bounded number of worker pages and aggregate them safely."""
         workers: list[WindmillWorker] = []
         try:
@@ -328,7 +380,7 @@ class WindmillRunSnapshot:
     new_events: tuple[WindmillRunEvent, ...] = ()
 
 
-class WindmillRunCoordinator(DataUpdateCoordinator[WindmillRunSnapshot]):
+class WindmillRunCoordinator(WindmillCoordinator[WindmillRunSnapshot]):
     """Observe bounded top-level run activity without one entity per job."""
 
     def __init__(
@@ -351,7 +403,7 @@ class WindmillRunCoordinator(DataUpdateCoordinator[WindmillRunSnapshot]):
         self._store = store
         self._state = state
 
-    async def _async_update_data(self) -> WindmillRunSnapshot:
+    async def _async_observe(self) -> WindmillRunSnapshot:
         """Walk bounded job pages, aggregate them and derive new completion events."""
         jobs: list[WindmillJob] = []
         try:
@@ -474,9 +526,7 @@ def load_selections(raw: Any) -> tuple[RunnableSelection, ...]:
     return tuple(selections)
 
 
-class WindmillRunnableCoordinator(
-    DataUpdateCoordinator[Mapping[tuple[str, str], ResolvedRunnable]]
-):
+class WindmillRunnableCoordinator(WindmillCoordinator[Mapping[tuple[str, str], ResolvedRunnable]]):
     """Resolve explicitly selected runnables without exposing a whole workspace."""
 
     def __init__(
@@ -497,7 +547,7 @@ class WindmillRunnableCoordinator(
         self.client = client
         self.selections = selections
 
-    async def _async_update_data(self) -> Mapping[tuple[str, str], ResolvedRunnable]:
+    async def _async_observe(self) -> Mapping[tuple[str, str], ResolvedRunnable]:
         """Resolve every selection into availability and bounded schema metadata."""
         resolved: dict[tuple[str, str], ResolvedRunnable] = {}
         for selection in self.selections:
@@ -634,7 +684,7 @@ class StartedJobRegistry:
         await self._store.async_save({"jobs": [job.as_dict() for job in self.tracked]})
 
 
-class WindmillUpdateCoordinator(DataUpdateCoordinator[WindmillUpdateStatus | None]):
+class WindmillUpdateCoordinator(WindmillCoordinator[WindmillUpdateStatus | None]):
     """Poll the best-effort update check without blocking health updates."""
 
     def __init__(
@@ -653,7 +703,7 @@ class WindmillUpdateCoordinator(DataUpdateCoordinator[WindmillUpdateStatus | Non
         )
         self.client = client
 
-    async def _async_update_data(self) -> WindmillUpdateStatus:
+    async def _async_observe(self) -> WindmillUpdateStatus:
         """Refresh the best-effort update check.
 
         The data type is optional because the first refresh may fail without failing setup:

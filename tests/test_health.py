@@ -1,5 +1,6 @@
 """Tests for the Windmill instance health entities."""
 
+import logging
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime, timedelta
@@ -7,6 +8,7 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from freezegun.api import FrozenDateTimeFactory
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant
@@ -32,6 +34,7 @@ from custom_components.windmill.api import (
     WindmillHealthState,
     WindmillHealthStatus,
     WindmillIdentity,
+    WindmillRateLimitError,
     WindmillServerInfo,
 )
 from custom_components.windmill.const import (
@@ -39,9 +42,11 @@ from custom_components.windmill.const import (
     CONF_TOKEN,
     CONF_WORKSPACE,
     DOMAIN,
+    MAX_RATE_LIMIT_BACKOFF_SECONDS,
     OPT_DETAILED_HEALTH,
     OPT_INSTANCE_HEALTH,
 )
+from custom_components.windmill.coordinator import HEALTH_UPDATE_INTERVAL
 
 BASE_URL = "https://windmill.example"
 WORKSPACE = "home-assistant"
@@ -335,3 +340,63 @@ async def test_health_polling_is_shared_by_all_entities(hass: HomeAssistant) -> 
 
     assert mocks["health"].await_count == 1
     assert mocks["detailed"].await_count == 1
+
+
+async def test_rate_limiting_slows_polling_until_one_refresh_succeeds(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """Windmill asking for a retry delay stops the integration from polling through it."""
+    entry = await _setup_entry(hass)
+    coordinator = entry.runtime_data.health_coordinator
+
+    with patched_client(health=WindmillRateLimitError(retry_after=600.0)):
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=2))
+        await hass.async_block_till_done()
+
+    assert coordinator.update_interval == timedelta(seconds=600)
+
+    with patched_client() as mocks:
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=120))
+        await hass.async_block_till_done()
+
+        assert mocks["health"].await_count == 0
+
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=700))
+        await hass.async_block_till_done()
+
+        assert mocks["health"].await_count == 1
+
+    assert coordinator.update_interval == HEALTH_UPDATE_INTERVAL
+    assert hass.states.get("sensor.home_assistant_health").state == "healthy"
+
+
+async def test_rate_limit_backoff_is_bounded(hass: HomeAssistant) -> None:
+    """A hostile or missing retry delay cannot take the integration offline indefinitely."""
+    entry = await _setup_entry(hass)
+    coordinator = entry.runtime_data.health_coordinator
+
+    with patched_client(health=WindmillRateLimitError(retry_after=86_400.0)):
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=2))
+        await hass.async_block_till_done()
+
+    assert coordinator.update_interval == timedelta(seconds=MAX_RATE_LIMIT_BACKOFF_SECONDS)
+
+
+async def test_repeated_failures_are_logged_once(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Repeated identical failures must not fill the log; only the first is an error."""
+    await _setup_entry(hass)
+    caplog.clear()
+
+    for minutes in (2, 4, 6):
+        with caplog.at_level(logging.DEBUG), patched_client(health=WindmillConnectionError()):
+            async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=minutes))
+            await hass.async_block_till_done()
+
+    errors = [
+        record
+        for record in caplog.records
+        if record.levelno >= logging.ERROR and "windmill health" in record.getMessage().lower()
+    ]
+    assert len(errors) == 1
