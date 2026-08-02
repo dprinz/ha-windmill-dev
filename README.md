@@ -189,9 +189,9 @@ actions:
 
 The entity ID derives from your config-entry title; the one above is an example. Completions are
 observed by polling, so an event fires within roughly one poll interval (60 seconds), not in real
-time. Completions that finish while the integration is down are currently observed during setup
-without firing an event (known limitation, tracked as `WMHA-0023`), and a first-ever setup never
-replays history.
+time. Completions that finish while the integration is down are observed by the refresh during
+setup and fire once the event entity exists — on a Home Assistant start not before startup has
+completed, so automations should be listening by then. A first-ever setup never replays history.
 
 ## Worker entity lifecycle
 

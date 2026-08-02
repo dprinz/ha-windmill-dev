@@ -9,8 +9,13 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import EVENT_STATE_CHANGED, STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import HomeAssistant
+from homeassistant.const import (
+    EVENT_HOMEASSISTANT_STARTED,
+    EVENT_STATE_CHANGED,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+)
+from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
@@ -127,6 +132,17 @@ async def _refresh(hass: HomeAssistant, *, jobs: Any, minutes: int = 2) -> None:
         await hass.async_block_till_done()
 
 
+def _fired_run_events(changes: list[Any]) -> list[Any]:
+    """Return the state changes that are actual run event publications."""
+    return [
+        change
+        for change in changes
+        if change.data["entity_id"] == "event.home_assistant_run"
+        and change.data["new_state"] is not None
+        and change.data["new_state"].attributes.get("job_id")
+    ]
+
+
 async def test_run_entities_are_aggregates_only(hass: HomeAssistant) -> None:
     """Run observation adds four aggregates and one event entity, never one per job."""
     entry = await _setup_entry(hass)
@@ -214,19 +230,21 @@ async def test_repeated_notification_of_one_snapshot_publishes_once(
     ]
 
 
-async def test_failed_poll_publishes_nothing_the_entity_has_not_published(
+async def test_failed_poll_after_setup_publication_never_republishes(
     hass: HomeAssistant,
 ) -> None:
-    """A failed poll publishes nothing even when its stale snapshot carries unpublished events."""
+    """A completion published after a reload is never republished by a failed poll."""
     entry = await _setup_entry(hass, jobs=(RUNNING_JOB,))
 
-    # The refresh during setup observes a completion before the event entity is added, so the
-    # entity's first notification carries a snapshot it never published.
+    # The refresh during the reload observes a completion before the event entity is added; the
+    # entity publishes it once as soon as it exists.
     with patched_client(jobs=(RUNNING_JOB, CANCELED_JOB)):
         await hass.config_entries.async_reload(entry.entry_id)
         await hass.async_block_till_done()
 
-    assert hass.states.get("event.home_assistant_run").state == STATE_UNKNOWN
+    published_at = hass.states.get("event.home_assistant_run").state
+    assert published_at != STATE_UNKNOWN
+    assert hass.states.get("event.home_assistant_run").attributes["job_id"] == CANCELED_JOB.id
 
     await _refresh(hass, jobs=WindmillRateLimitError(retry_after=30.0), minutes=4)
 
@@ -234,7 +252,65 @@ async def test_failed_poll_publishes_nothing_the_entity_has_not_published(
 
     await _refresh(hass, jobs=(RUNNING_JOB, CANCELED_JOB), minutes=6)
 
-    assert hass.states.get("event.home_assistant_run").state == STATE_UNKNOWN
+    recovered = hass.states.get("event.home_assistant_run")
+    assert recovered.state == published_at
+    assert recovered.attributes["job_id"] == CANCELED_JOB.id
+
+
+async def test_setup_refresh_completion_fires_once_after_reload(hass: HomeAssistant) -> None:
+    """A completion observed by the refresh during a reload fires exactly once afterwards."""
+    entry = await _setup_entry(hass, jobs=(RUNNING_JOB,))
+    changes = async_capture_events(hass, EVENT_STATE_CHANGED)
+
+    with patched_client(jobs=(RUNNING_JOB, CANCELED_JOB)):
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+
+    fired = _fired_run_events(changes)
+    assert len(fired) == 1
+    published = fired[0].data["new_state"]
+    assert published.attributes["event_type"] == "canceled"
+    assert published.attributes["job_id"] == CANCELED_JOB.id
+
+
+async def test_setup_publication_waits_for_home_assistant_started(hass: HomeAssistant) -> None:
+    """On a cold start the catch-up publication waits until automations can be listening."""
+    entry = await _setup_entry(hass, jobs=(RUNNING_JOB,))
+    hass.set_state(CoreState.starting)
+    changes = async_capture_events(hass, EVENT_STATE_CHANGED)
+
+    with patched_client(jobs=(RUNNING_JOB, CANCELED_JOB)):
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert not _fired_run_events(changes)
+
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done()
+
+    fired = _fired_run_events(changes)
+    assert len(fired) == 1
+    assert fired[0].data["new_state"].attributes["job_id"] == CANCELED_JOB.id
+
+
+async def test_unload_before_started_cancels_the_pending_publication(hass: HomeAssistant) -> None:
+    """An unload before startup completes cancels the catch-up delivery without a leftover."""
+    entry = await _setup_entry(hass, jobs=(RUNNING_JOB,))
+    hass.set_state(CoreState.starting)
+    changes = async_capture_events(hass, EVENT_STATE_CHANGED)
+
+    with patched_client(jobs=(RUNNING_JOB, CANCELED_JOB)):
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done()
+
+    assert not _fired_run_events(changes)
+    leftover = hass.states.get("event.home_assistant_run")
+    assert leftover.attributes.get("restored") or leftover.state == STATE_UNAVAILABLE
 
 
 async def test_several_completions_in_one_poll_each_fire(hass: HomeAssistant) -> None:

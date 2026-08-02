@@ -5,6 +5,7 @@ from __future__ import annotations
 from homeassistant.components.event import EventEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.start import async_at_started
 
 from . import WindmillConfigEntry
 from .api import JobState
@@ -33,6 +34,20 @@ class WindmillRunEventEntity(WindmillRunEntity, EventEntity):
     _key = "run"
     _attr_event_types = RUN_EVENT_TYPES
     _published: WindmillRunSnapshot | None = None
+
+    async def async_added_to_hass(self) -> None:
+        """Deliver the completions the refresh during setup observed before this entity existed."""
+        await super().async_added_to_hass()
+        # The refresh during config-entry setup runs before this entity exists, so its snapshot
+        # never arrives through a listener notification. Automations attach their triggers only
+        # once Home Assistant has started, so the catch-up delivery waits for that moment; on a
+        # reload Home Assistant is already running and it fires immediately.
+        self.async_on_remove(async_at_started(self.hass, self._async_deliver_pending))
+
+    @callback
+    def _async_deliver_pending(self, hass: HomeAssistant) -> None:
+        """Route the pending snapshot through the same guard as any listener notification."""
+        self._handle_coordinator_update()
 
     @callback
     def _handle_coordinator_update(self) -> None:
