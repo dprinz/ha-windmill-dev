@@ -104,7 +104,7 @@ re-verified.
 | Workflow parses, permissions minimal | `yaml.safe_load` of `checks.yml` | 2026-08-03: `permissions: {contents: read}`, no `secrets` reference |
 | Repository guardrails | `python scripts/validate_repository.py` | 2026-08-03: passed (34 tickets checked) |
 | Whitespace | `git diff --check` | 2026-08-03: exit 0 |
-| First run on `main` | `gh run list --workflow "Tests, lint and types"` | RUN_PLACEHOLDER |
+| First run on `main` | `gh run view 30772434801` on commit `eba0780` | 2026-08-03: success. The log shows CPython 3.14.6, `395 passed`, "Required test coverage of 95% reached. Total coverage: 97.29%", ruff clean, 31 files formatted and mypy clean — the same results the tickets recorded locally, now reproduced on a clean checkout |
 
 ## Review evidence
 
