@@ -115,9 +115,9 @@ Recorded honestly instead of claimed:
   a granular-scoped token receives `400` ("Could not extract domain from route:
   /api/health/detailed") — it fails in the scope middleware before the handler, exactly as
   the pinned source predicted; an unscoped token receives `200`. Detailed health therefore
-  stays an optional capability that needs an effectively unscoped token (backlog ticket
-  WMHA-0030 tracks the `400` surfacing as `unsupported` rather than `unauthorized` in
-  capability discovery).
+  stays an optional capability that needs an effectively unscoped token. Since WMHA-0030 the
+  detailed-health probe classifies exactly this `400` as `unauthorized` (token scope cannot
+  address the route) instead of `unsupported`; no other `400` mapping changed.
 - ~~No observation of a busy production workspace~~ **Narrowed 2026-08-02 (WMHA-0026):** a
   busy disposable workspace with real concurrent traffic (6 successful, 2 failed, 1
   cancelled job) was observed through the client's bounded projection: all 9 jobs were

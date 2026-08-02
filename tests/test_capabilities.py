@@ -166,6 +166,21 @@ async def test_capability_matrix_uses_safe_bounded_probes(
             CapabilityReason.PERMISSION_DENIED,
         ),
         (
+            # v1.775.2 scope middleware answers granular-scoped tokens with 400 on
+            # detailed health (WMHA-0026); only this probe maps 400 to unauthorized.
+            {"detailed_status": HTTPStatus.BAD_REQUEST},
+            "detailed_health",
+            CapabilityStatus.UNAUTHORIZED,
+            CapabilityReason.PERMISSION_DENIED,
+        ),
+        (
+            # A 400 anywhere else stays a generic rejected request, never a scope denial.
+            {"workers_status": HTTPStatus.BAD_REQUEST},
+            "workers",
+            CapabilityStatus.UNSUPPORTED,
+            CapabilityReason.UNEXPECTED_RESPONSE,
+        ),
+        (
             {"detailed_body": []},
             "detailed_health",
             CapabilityStatus.UNSUPPORTED,

@@ -1024,6 +1024,11 @@ class WindmillClient(WindmillInstanceClient):
                     "/api/health/detailed",
                     authenticated=True,
                     body_statuses=frozenset({200, 503}),
+                    # v1.775.2 has no `health` scope domain, so its scope middleware
+                    # rejects granular-scoped tokens with 400 before the handler
+                    # (WMHA-0026 live verification); that is a scope denial, not a
+                    # malformed request from this fixed parameterless probe.
+                    scope_denied_statuses=frozenset({400}),
                 )
             ),
             asyncio.create_task(
@@ -1198,6 +1203,7 @@ class WindmillClient(WindmillInstanceClient):
         *,
         authenticated: bool = True,
         body_statuses: frozenset[int] = frozenset({200}),
+        scope_denied_statuses: frozenset[int] = frozenset(),
     ) -> CapabilityAvailability:
         """Probe an endpoint whose successful response must be a JSON object."""
 
@@ -1208,6 +1214,10 @@ class WindmillClient(WindmillInstanceClient):
                 accept="application/json",
                 body_statuses=body_statuses,
             )
+            if response.status in scope_denied_statuses:
+                raise WindmillAuthorizationError(
+                    "Windmill token scope cannot address this endpoint"
+                )
             self._raise_for_status(
                 response,
                 success_statuses=body_statuses,
