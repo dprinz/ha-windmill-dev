@@ -22,3 +22,15 @@ run:
       example: '{"room": "kitchen"}'
       selector:
         object:
+cancel:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: windmill
+    job_id:
+      required: true
+      example: 00000000-0000-4000-8000-000000000001
+      selector:
+        text:

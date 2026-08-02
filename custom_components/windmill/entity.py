@@ -42,6 +42,7 @@ class WindmillHealthEntity(CoordinatorEntity[WindmillHealthCoordinator]):
     ) -> None:
         """Attach the entity to the shared coordinator and the instance device."""
         super().__init__(coordinator)
+        self.runtime = runtime
         self._attr_unique_id = f"{entry_id}_{self._key}"
         self._attr_translation_key = self._key
         self._attr_device_info = build_device_info(entry_id, title, runtime)
@@ -85,6 +86,7 @@ class WindmillRunEntity(CoordinatorEntity[WindmillRunCoordinator]):
     ) -> None:
         """Attach the entity to the shared coordinator and the instance device."""
         super().__init__(coordinator)
+        self.runtime = runtime
         self._attr_unique_id = f"{entry_id}_{self._key}"
         self._attr_translation_key = self._key
         self._attr_device_info = build_device_info(entry_id, title, runtime)

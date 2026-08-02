@@ -10,6 +10,7 @@ from .api import (
     WindmillServerInfo,
 )
 from .coordinator import (
+    StartedJobRegistry,
     WindmillCapabilityCoordinator,
     WindmillHealthCoordinator,
     WindmillRunCoordinator,
@@ -29,6 +30,7 @@ class WindmillRuntimeData:
     worker_coordinator: WindmillWorkerCoordinator | None = None
     run_coordinator: WindmillRunCoordinator | None = None
     runnable_coordinator: WindmillRunnableCoordinator | None = None
+    started_jobs: StartedJobRegistry | None = None
 
     @property
     def identity(self) -> WindmillIdentity:

@@ -23,6 +23,10 @@ ATTR_CONFIG_ENTRY_ID = "config_entry_id"
 ATTR_KIND = "kind"
 ATTR_PATH = "path"
 ATTR_ARGUMENTS = "arguments"
+ATTR_JOB_ID = "job_id"
+
+MAX_TRACKED_JOBS = 50
+TRACKED_JOB_TTL_HOURS = 24
 
 MAX_SELECTED_RUNNABLES = 25
 

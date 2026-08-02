@@ -17,6 +17,7 @@ from homeassistant.core import (
 )
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.util import dt as dt_util
 
 from .api import (
     AddressingMode,
@@ -24,19 +25,28 @@ from .api import (
     RunnableParameter,
     WindmillAuthenticationError,
     WindmillAuthorizationError,
+    WindmillConflictError,
     WindmillConnectionError,
     WindmillError,
     WindmillNotFoundError,
     WindmillRateLimitError,
     WindmillServerError,
 )
-from .const import ATTR_ARGUMENTS, ATTR_CONFIG_ENTRY_ID, ATTR_KIND, ATTR_PATH, DOMAIN
-from .coordinator import ResolvedRunnable
+from .const import (
+    ATTR_ARGUMENTS,
+    ATTR_CONFIG_ENTRY_ID,
+    ATTR_JOB_ID,
+    ATTR_KIND,
+    ATTR_PATH,
+    DOMAIN,
+)
+from .coordinator import ResolvedRunnable, TrackedJob
 from .models import WindmillRuntimeData
 
 type WindmillEntry = ConfigEntry[WindmillRuntimeData]
 
 SERVICE_RUN = "run"
+SERVICE_CANCEL = "cancel"
 MAX_ARGUMENT_BYTES = 8_192
 
 RUN_SCHEMA = vol.Schema(
@@ -45,6 +55,13 @@ RUN_SCHEMA = vol.Schema(
         vol.Required(ATTR_KIND): vol.In([kind.value for kind in RunnableKind]),
         vol.Required(ATTR_PATH): cv.string,
         vol.Optional(ATTR_ARGUMENTS, default=dict): vol.Schema({str: object}),
+    }
+)
+
+CANCEL_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_CONFIG_ENTRY_ID): cv.string,
+        vol.Required(ATTR_JOB_ID): cv.string,
     }
 )
 
@@ -72,7 +89,53 @@ def async_register_services(hass: HomeAssistant) -> None:
         resolved = _async_resolve_runnable(entry, kind, path)
         arguments = validate_arguments(resolved, call.data[ATTR_ARGUMENTS])
         job_id = await async_start_runnable(entry, resolved, arguments)
+        registry = entry.runtime_data.started_jobs
+        if registry is not None:
+            await registry.async_track(
+                TrackedJob(
+                    job_id=job_id,
+                    kind=kind.value,
+                    path=path,
+                    started_at=dt_util.utcnow(),
+                )
+            )
         return {"job_id": job_id}
+
+    async def async_cancel(call: ServiceCall) -> ServiceResponse:
+        """Cancel one job that Home Assistant started and still tracks."""
+        entry = _async_resolve_entry(hass, call.data[ATTR_CONFIG_ENTRY_ID])
+        job_id = call.data[ATTR_JOB_ID]
+        registry = entry.runtime_data.started_jobs
+        if registry is None or registry.get(job_id) is None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="job_not_tracked",
+                translation_placeholders={"job_id": job_id},
+            )
+        try:
+            await entry.runtime_data.client.async_cancel_job(job_id)
+        except WindmillNotFoundError as err:
+            await registry.async_forget(job_id)
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="job_not_cancellable",
+                translation_placeholders={"job_id": job_id},
+            ) from err
+        except WindmillConflictError as err:
+            await registry.async_forget(job_id)
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="job_not_cancellable",
+                translation_placeholders={"job_id": job_id},
+            ) from err
+        except WindmillError as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key=_error_key(err),
+                translation_placeholders={"path": job_id},
+            ) from err
+        await registry.async_forget(job_id)
+        return None
 
     hass.services.async_register(
         DOMAIN,
@@ -81,6 +144,7 @@ def async_register_services(hass: HomeAssistant) -> None:
         schema=RUN_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )
+    hass.services.async_register(DOMAIN, SERVICE_CANCEL, async_cancel, schema=CANCEL_SCHEMA)
 
 
 async def async_start_runnable(

@@ -24,6 +24,7 @@ MAX_WORKSPACE_ROWS = 200
 MAX_WORKER_GROUP_ROWS = 200
 MAX_TEXT_FIELD_LENGTH = 256
 ALIVE_WORKER_SECONDS = 300
+CANCELLATION_REASON = "Canceled from Home Assistant"
 MAX_RUNNABLE_PARAMETERS = 50
 MAX_ENUM_VALUES = 20
 RUNNABLE_PATH_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.\-]*(?:/[A-Za-z0-9_][A-Za-z0-9_.\-]*)*")
@@ -1103,6 +1104,22 @@ class WindmillClient(WindmillInstanceClient):
         if not _is_uuid(job_id):
             raise WindmillProtocolError("Windmill returned an invalid job identifier")
         return job_id
+
+    async def async_cancel_job(self, job_id: str) -> None:
+        """Cancel one job that Home Assistant started and tracked."""
+        if not _is_uuid(job_id):
+            raise WindmillRequestError("Job identifier is invalid")
+        workspace = quote(self.workspace, safe="")
+        response = await self._async_post(
+            f"/api/w/{workspace}/jobs_u/queue/cancel/{quote(job_id, safe='')}",
+            accept="text/plain",
+            json_body={"reason": CANCELLATION_REASON},
+        )
+        self._raise_for_status(
+            response,
+            success_statuses=frozenset({200, 201, 202}),
+            not_found=WindmillNotFoundError,
+        )
 
     async def _async_get_identity(self) -> WindmillIdentity:
         """Validate the token and workspace through the verified whoami endpoint."""

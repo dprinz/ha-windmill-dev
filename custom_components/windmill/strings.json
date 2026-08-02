@@ -216,6 +216,20 @@
           "description": "JSON-compatible arguments validated against the runnable's input schema."
         }
       }
+    },
+    "cancel": {
+      "name": "Cancel a job",
+      "description": "Cancels a job that Home Assistant started and still tracks.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Windmill workspace",
+          "description": "The configured Windmill instance and workspace the job belongs to."
+        },
+        "job_id": {
+          "name": "Job ID",
+          "description": "Identifier returned by the run action."
+        }
+      }
     }
   },
   "exceptions": {
@@ -272,6 +286,12 @@
     },
     "pin_unavailable": {
       "message": "{path} is pinned, but Windmill does not expose a version to pin to. Select it again without pinning."
+    },
+    "job_not_tracked": {
+      "message": "Home Assistant did not start job {job_id}, or it is no longer tracked."
+    },
+    "job_not_cancellable": {
+      "message": "Job {job_id} is already finished or cannot be cancelled."
     }
   }
 }

@@ -14,6 +14,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .api import (
     AddressingMode,
@@ -35,7 +36,7 @@ from .api import (
     WindmillWorker,
     normalize_runnable_path,
 )
-from .const import DOMAIN, MAX_SELECTED_RUNNABLES
+from .const import DOMAIN, MAX_SELECTED_RUNNABLES, MAX_TRACKED_JOBS, TRACKED_JOB_TTL_HOURS
 
 _LOGGER = logging.getLogger(__name__)
 CAPABILITY_UPDATE_INTERVAL = timedelta(hours=6)
@@ -48,6 +49,7 @@ RUN_PAGE_SIZE = 100
 MAX_RUN_PAGES = 3
 MAX_SEEN_JOBS = 200
 RUN_STORAGE_VERSION = 1
+JOB_STORAGE_VERSION = 1
 RUNNABLE_UPDATE_INTERVAL = timedelta(minutes=30)
 RUNNABLE_PAGE_SIZE = 100
 MAX_RUNNABLE_PAGES = 3
@@ -61,6 +63,7 @@ class RunObservationState:
     seen: deque[str] = field(default_factory=lambda: deque(maxlen=MAX_SEEN_JOBS))
     last_success: datetime | None = None
     last_failure: datetime | None = None
+    initialized: bool = False
 
     def remember(self, job: WindmillJob) -> bool:
         """Record one completion and return whether it was newly observed."""
@@ -86,6 +89,7 @@ class RunObservationState:
             "seen": list(self.seen),
             "last_success": _isoformat(self.last_success),
             "last_failure": _isoformat(self.last_failure),
+            "initialized": self.initialized,
         }
 
     @classmethod
@@ -100,6 +104,7 @@ class RunObservationState:
         seen = data.get("seen")
         if isinstance(seen, list):
             state.seen.extend(str(job_id) for job_id in seen[-MAX_SEEN_JOBS:])
+        state.initialized = data.get("initialized") is True
         return state
 
     @staticmethod
@@ -365,7 +370,7 @@ class WindmillRunCoordinator(DataUpdateCoordinator[WindmillRunSnapshot]):
         ]
         completions.sort(key=lambda entry: (entry[0], entry[1]))
 
-        first_observation = self._state.watermark is None and not self._state.seen
+        first_observation = not self._state.initialized
         events: list[WindmillRunEvent] = []
         for _, _, job in completions:
             if self._state.remember(job) and not first_observation:
@@ -378,6 +383,7 @@ class WindmillRunCoordinator(DataUpdateCoordinator[WindmillRunSnapshot]):
                         duration_ms=job.duration_ms,
                     )
                 )
+        self._state.initialized = True
         return WindmillRunSnapshot(
             running=running,
             queued=queued,
@@ -511,3 +517,91 @@ async def async_discover_runnables(client: WindmillClient) -> tuple[WindmillRunn
         except WindmillError:
             _LOGGER.debug("Windmill %s discovery is currently unavailable", kind.value)
     return tuple(discovered)
+
+
+@dataclass(frozen=True, slots=True)
+class TrackedJob:
+    """One job that Home Assistant started, tracked until completion or expiry."""
+
+    job_id: str
+    kind: str
+    path: str
+    started_at: datetime
+
+    def as_dict(self) -> dict[str, str]:
+        """Return the JSON-serializable tracked job."""
+        return {
+            "job_id": self.job_id,
+            "kind": self.kind,
+            "path": self.path,
+            "started_at": self.started_at.isoformat(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> TrackedJob | None:
+        """Restore one tracked job, ignoring anything unreadable."""
+        if not isinstance(data, dict):
+            return None
+        started_at = _parse_stored_timestamp(data.get("started_at"))
+        job_id = data.get("job_id")
+        if started_at is None or not isinstance(job_id, str):
+            return None
+        return cls(
+            job_id=job_id,
+            kind=str(data.get("kind", "")),
+            path=str(data.get("path", "")),
+            started_at=started_at,
+        )
+
+
+class StartedJobRegistry:
+    """Bounded registry of Home Assistant-started jobs with explicit expiry."""
+
+    def __init__(self, store: Store[dict[str, Any]]) -> None:
+        """Initialize an empty registry backed by one config-entry store."""
+        self._store = store
+        self._jobs: dict[str, TrackedJob] = {}
+
+    async def async_load(self) -> None:
+        """Restore the registry, discarding unreadable or expired entries."""
+        data = await self._store.async_load()
+        rows = data.get("jobs") if isinstance(data, dict) else None
+        if isinstance(rows, list):
+            for row in rows[-MAX_TRACKED_JOBS:]:
+                job = TrackedJob.from_dict(row)
+                if job is not None:
+                    self._jobs[job.job_id] = job
+        self._prune()
+
+    async def async_track(self, job: TrackedJob) -> None:
+        """Record one started job and persist the bounded registry."""
+        self._jobs[job.job_id] = job
+        self._prune()
+        await self._async_save()
+
+    async def async_forget(self, job_id: str) -> None:
+        """Drop one completed job from the registry."""
+        if self._jobs.pop(job_id, None) is not None:
+            await self._async_save()
+
+    def get(self, job_id: str) -> TrackedJob | None:
+        """Return one tracked job, if Home Assistant started it."""
+        self._prune()
+        return self._jobs.get(job_id)
+
+    @property
+    def tracked(self) -> tuple[TrackedJob, ...]:
+        """Return every currently tracked job."""
+        self._prune()
+        return tuple(self._jobs.values())
+
+    def _prune(self) -> None:
+        """Enforce the retention window and the size bound."""
+        cutoff = dt_util.utcnow() - timedelta(hours=TRACKED_JOB_TTL_HOURS)
+        fresh = [job for job in self._jobs.values() if job.started_at > cutoff]
+        fresh.sort(key=lambda job: job.started_at)
+        self._jobs = {job.job_id: job for job in fresh[-MAX_TRACKED_JOBS:]}
+
+    async def _async_save(self) -> None:
+        """Persist the bounded registry."""
+        await self._store.async_save({"jobs": [job.as_dict() for job in self.tracked]})

@@ -35,7 +35,9 @@ class WindmillRunEventEntity(WindmillRunEntity, EventEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Publish every completion the coordinator observed for the first time."""
+        registry = self.runtime.started_jobs
         for event in self.coordinator.data.new_events:
+            tracked = None if registry is None else registry.get(event.job_id)
             self._trigger_event(
                 event.state.value,
                 {
@@ -43,6 +45,9 @@ class WindmillRunEventEntity(WindmillRunEntity, EventEntity):
                     "job_kind": event.kind,
                     "path": event.path,
                     "duration_ms": event.duration_ms,
+                    "started_by_home_assistant": tracked is not None,
                 },
             )
+            if tracked is not None and registry is not None:
+                self.hass.async_create_task(registry.async_forget(event.job_id))
         super()._handle_coordinator_update()

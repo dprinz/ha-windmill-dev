@@ -342,3 +342,14 @@ def test_retention_state_rejects_old_and_corrupt_entries() -> None:
     assert list(restored.seen) == list(state.seen)
     assert restored.last_success == state.last_success
     assert RunObservationState.from_dict({"watermark": "2026-08-02T10:00:00"}).watermark is None
+
+
+async def test_first_completion_after_an_empty_start_still_fires(hass: HomeAssistant) -> None:
+    """An idle workspace at setup does not suppress the first later completion."""
+    await _setup_entry(hass, jobs=())
+
+    await _refresh(hass, jobs=(SUCCESS_JOB,))
+
+    event = hass.states.get("event.home_assistant_run")
+    assert event.attributes["event_type"] == "success"
+    assert event.attributes["job_id"] == SUCCESS_JOB.id

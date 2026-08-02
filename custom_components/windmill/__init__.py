@@ -41,8 +41,10 @@ from .const import (
     OPT_WORKER_GROUPS,
 )
 from .coordinator import (
+    JOB_STORAGE_VERSION,
     RUN_STORAGE_VERSION,
     RunObservationState,
+    StartedJobRegistry,
     WindmillCapabilityCoordinator,
     WindmillHealthCoordinator,
     WindmillRunCoordinator,
@@ -141,6 +143,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: WindmillConfigEntry) -> 
         runnable_coordinator = WindmillRunnableCoordinator(hass, entry, client, selections)
         await runnable_coordinator.async_config_entry_first_refresh()
 
+    job_store: Store[dict[str, Any]] = Store(
+        hass, JOB_STORAGE_VERSION, f"{DOMAIN}.jobs.{entry.entry_id}"
+    )
+    started_jobs = StartedJobRegistry(job_store)
+    await started_jobs.async_load()
+
     entry.runtime_data = WindmillRuntimeData(
         client=client,
         connection=connection,
@@ -149,6 +157,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WindmillConfigEntry) -> 
         worker_coordinator=worker_coordinator,
         run_coordinator=run_coordinator,
         runnable_coordinator=runnable_coordinator,
+        started_jobs=started_jobs,
     )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
