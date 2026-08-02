@@ -59,8 +59,9 @@ dated results in the WMHA-0026 ticket and `docs/product/supported-versions-and-l
    cancellation (`200`, observed `canceled`).
 2. ~~Detailed-health behavior for granular-scoped tokens (WMHA-0005)~~ — **closed 2026-08-02:**
    granular-scoped token → `400` from the scope middleware (no `health` domain, as the pinned
-   source predicted); unscoped token → `200`. The `400` surfaces as `unsupported` instead of
-   `unauthorized` in capability discovery — tracked in backlog ticket WMHA-0030.
+   source predicted); unscoped token → `200`. The `400` surfaced as `unsupported` instead of
+   `unauthorized` in capability discovery; fixed in WMHA-0030 (commit `e2f3395`), so capability
+   discovery now reports it as `unauthorized` (corrected 2026-08-03 by the WMHA-0034 review).
 3. ~~Cloud tenant behavior for health and workers (WMHA-0005/0006)~~ — **re-confirmed
    unverifiable 2026-08-02:** no Cloud test tenant exists; obtaining one is a human decision.
 4. ~~Observation against a busy real workspace (WMHA-0007)~~ — **closed at synthetic-load level

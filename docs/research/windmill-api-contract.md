@@ -373,8 +373,10 @@ closed the restricted-token gates above:
   extract domain from route: /api/health/detailed" — confirming the pinned-source prediction
   that scoped tokens fail in the scope middleware before the handler (no `health` domain
   exists), with the precise status code now observed. An unscoped token returned `200`.
-  Note: the client's capability discovery maps this `400` to `unsupported` rather than
-  `unauthorized` (backlog ticket WMHA-0030).
+  Note: at the time of the live check the client's capability discovery mapped this `400` to
+  `unsupported` rather than `unauthorized`. Corrected 2026-08-03 (WMHA-0034 review of
+  WMHA-0026): since WMHA-0030 (commit `e2f3395`) the detailed-health probe classifies exactly
+  this `400` as `unauthorized`; no other `400` mapping changed.
 - A token missing `workers:read` correctly produced `403` on the worker list, mapped by the
   client to `unauthorized` — the five-state capability behavior works against a live
   instance.

@@ -39,6 +39,13 @@ REQUIRED_TICKET_SECTIONS = (
     "## Review evidence",
 )
 
+REVIEW_SECTION = "## Review evidence"
+REVIEW_PLACEHOLDER_RE = re.compile(r"\bpending\b|\bTBD\b|\bTODO\b", re.IGNORECASE)
+# A done ticket must state a review result. WMHA-0026 and WMHA-0029 were closed with the
+# placeholder before this check existed; `tickets/done/` is append-only, so their correction
+# record is WMHA-0034 rather than an edit. Never extend this set — fill the section instead.
+REVIEW_EVIDENCE_GRANDFATHERED = frozenset({"WMHA-0026", "WMHA-0029"})
+
 FRONTMATTER_RE = re.compile(r"\A---\n(?P<body>.*?)\n---\n", re.DOTALL)
 FIELD_RE = re.compile(r"^(?P<key>[a-z_]+):\s*(?P<value>.*)$", re.MULTILINE)
 LINK_RE = re.compile(r"(?<!!)\[[^]]+\]\((?P<target>[^)]+)\)")
@@ -94,6 +101,29 @@ def parse_frontmatter(text: str, path: Path) -> dict[str, str]:
     return {m.group("key"): m.group("value").strip() for m in FIELD_RE.finditer(match.group("body"))}
 
 
+def review_evidence_body(text: str) -> str:
+    """Return the body of the review-evidence section without its bullet labels."""
+    _, _, after = text.partition(f"{REVIEW_SECTION}\n")
+    body = re.split(r"^## ", after, maxsplit=1, flags=re.MULTILINE)[0]
+    return re.sub(r"^\s*[-*]\s*[A-Za-z/ ]+:", "", body, flags=re.MULTILINE)
+
+
+def validate_review_evidence(
+    path: Path, ticket_id: str | None, text: str, errors: list[str]
+) -> None:
+    """Require a done ticket to record a review result instead of an unfinished step."""
+    if ticket_id in REVIEW_EVIDENCE_GRANDFATHERED:
+        return
+    body = review_evidence_body(text)
+    if not body.strip():
+        errors.append(f"{path.relative_to(ROOT)}: {REVIEW_SECTION} is empty")
+        return
+    if REVIEW_PLACEHOLDER_RE.search(body):
+        errors.append(
+            f"{path.relative_to(ROOT)}: {REVIEW_SECTION} still contains an unfinished placeholder"
+        )
+
+
 def validate_required_files(errors: list[str]) -> None:
     for relative in sorted(REQUIRED_FILES):
         if not (ROOT / relative).is_file():
@@ -134,6 +164,8 @@ def validate_tickets(errors: list[str]) -> None:
             for section in REQUIRED_TICKET_SECTIONS:
                 if section not in text:
                     errors.append(f"{path.relative_to(ROOT)}: missing section {section}")
+            if expected_status == "done" and REVIEW_SECTION in text:
+                validate_review_evidence(path, ticket_id, text, errors)
 
 
 def validate_local_links(errors: list[str]) -> None:

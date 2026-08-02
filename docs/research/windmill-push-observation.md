@@ -134,11 +134,12 @@ Findings per revisit condition:
    `POST /api/w/{workspace}/jobs/run/batch_rerun_jobs`, 1 in
    `GET /api/w/{workspace}/jobs_u/getupdate_sse/{id}`. A full path diff of the two pinned specs
    shows only these additions: dbt runtime endpoints (`/dbt/*`, `jobs/dbt_graph/{id}`,
-   `jobs/dbt_resumable*`), per-job `GET /api/w/{workspace}/jobs/run_progress/{id}` (polled
-   `application/json` per-relation progress for one job id — a polling endpoint, not a stream,
-   and per-job/execution-scoped), `workspaces/seed_full_diff`, and
-   `settings/github_app_stale_webhooks` (inbound git-sync housekeeping). One removal:
-   `workspaces/edit_deploy_to`. No workspace-wide job event stream exists in v1.776.0.
+   `jobs/dbt_resumable*`, `workspaces/edit_dbt_warehouses`), per-job
+   `GET /api/w/{workspace}/jobs/run_progress/{id}` (polled `application/json` per-relation
+   progress for one job id — a polling endpoint, not a stream, and per-job/execution-scoped),
+   `workspaces/seed_full_diff`, and `settings/github_app_stale_webhooks` (inbound git-sync
+   housekeeping). One removal: `workspaces/edit_deploy_to`. No workspace-wide job event stream
+   exists in v1.776.0.
 2. **Signed outbound job webhooks — not present.** `POST /api/w/{workspace}/workspaces/edit_webhook`
    is unchanged and still takes a bare `{ "webhook": "<url>" }` string with no secret or signature
    field. The rolling webhooks documentation (re-fetched 2026-08-02) still lists only resource
@@ -163,3 +164,35 @@ Findings per revisit condition:
 Outcome: **no revisit condition fired; ADR-0003 is re-confirmed with verification date
 2026-08-02.** The next check is due at the next Windmill pin bump or when WMHA-0026 produces
 live-traffic evidence.
+
+### Independent verification 2026-08-03 (WMHA-0034)
+
+The WMHA-0034 review re-derived this section from the primary artifacts instead of from the
+prose above. Re-fetched raw `openapi.yaml` at both pinned tags and re-ran the counts:
+
+- `text/event-stream` occurs exactly **10 times in v1.776.0 and 10 times in v1.775.2**. In
+  v1.776.0 the occurrences sit at spec lines 10333/10367 (`run_and_stream/f/{path}`),
+  10415/10455 (`fv/{version}`), 10494/10525 (`p/{path}`), 10568/10603 (`h/{hash}`), 12995
+  (`jobs/run/batch_rerun_jobs`) and 14673 (`jobs_u/getupdate_sse/{id}`) — the claimed 8/1/1 split
+  across the three execution-scoped families. **Confirmed.**
+- `POST /w/{workspace}/workspaces/edit_webhook` (v1.776.0 spec lines 4341–4359) still takes a
+  bare `{ "webhook": string }` body with no secret or signature property. **Confirmed.**
+- The inventory of `hmac*`, `signature*` and `webhook_secret` terms is byte-for-byte identical
+  between the two specs, which supports the claim that the HMAC mentions are pre-existing and
+  unrelated. **Confirmed.**
+- The path diff is complete apart from one omission, corrected above:
+  `workspaces/edit_dbt_warehouses` was also added in v1.776.0. It is dbt warehouse
+  configuration, not an observation stream, so the conclusion is unaffected.
+- v1.776.0 (published 2026-08-01) is **still** the only release after v1.775.2 (GitHub Releases
+  API, re-queried 2026-08-03). **Confirmed.**
+- Windmill's workspace-webhook documentation (re-fetched 2026-08-03) still lists only script,
+  flow, app, resource, resource-type, variable and folder lifecycle events plus
+  `TokenExpiringSoon`/`TokenExpired` — **no job events**. **Confirmed.**
+- Home Assistant's webhook documentation (re-fetched 2026-08-03) still states that webhook
+  endpoints do not require authentication other than a valid webhook ID. **Confirmed.**
+
+Correction to condition 4: WMHA-0026 was completed later on 2026-08-02 (commit `2565315`), after
+this section was written. Its busy-workspace check is **synthetic load on a disposable
+instance**, not production traffic, and reported no latency or load problem, so the
+"no production evidence" boundary is materially unchanged — but the wording "WMHA-0026 remains in
+the backlog" is no longer accurate. Production-scale evidence and user reports remain absent.

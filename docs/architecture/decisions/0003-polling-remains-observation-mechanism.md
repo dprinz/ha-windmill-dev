@@ -130,3 +130,13 @@ evidence; the evidence supports deferral.
   WMHA-0026 is still backlog, so the no-production-evidence boundary is unchanged. No revisit
   condition fired; the decision stands. Delta details and sources:
   `docs/research/windmill-push-observation.md`, section "Successor check 2026-08-02".
+- **2026-08-03 (WMHA-0034): the 2026-08-02 re-confirmation was independently verified and
+  stands, with one correction.** The reviewer re-fetched both pinned OpenAPI artifacts and
+  reproduced the SSE inventory (10 occurrences in each of v1.775.2 and v1.776.0, same three
+  execution-scoped families), the unchanged signature-free `edit_webhook` body, the unchanged
+  Windmill workspace-webhook event list, the unchanged Home Assistant webhook authentication
+  model, and that v1.776.0 is still the sole successor of the pin. Correction: WMHA-0026 is no
+  longer backlog — it was completed on 2026-08-02 (commit `2565315`). Its run observation was
+  synthetic load on a disposable instance and surfaced no latency or load problem, so the
+  production-evidence revisit condition has still not fired; only the "remains backlog" wording
+  above is stale.
