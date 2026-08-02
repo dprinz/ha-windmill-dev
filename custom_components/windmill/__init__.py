@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError, ConfigEntryNotReady
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import (
@@ -32,6 +33,7 @@ from .const import (
     CONF_BASE_URL,
     CONF_TOKEN,
     CONF_WORKSPACE,
+    DOMAIN,
     FEATURE_DEFAULTS,
     OPT_DETAILED_HEALTH,
     OPT_INSTANCE_HEALTH,
@@ -63,6 +65,9 @@ from .services import async_register_services
 _LOGGER = logging.getLogger(__name__)
 
 type WindmillConfigEntry = ConfigEntry[WindmillRuntimeData]
+
+# Instances are configured exclusively through the UI config flow; YAML is rejected.
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 PLATFORMS = [
     Platform.BINARY_SENSOR,

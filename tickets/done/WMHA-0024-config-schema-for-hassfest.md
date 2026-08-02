@@ -1,7 +1,7 @@
 ---
 id: WMHA-0024
 title: Define config-entry-only CONFIG_SCHEMA for hassfest
-status: backlog
+status: done
 type: chore
 priority: low
 risk: low
@@ -37,8 +37,8 @@ result is a precondition for a future HACS default-store submission.
 
 ## Acceptance criteria
 
-- [ ] hassfest run for `custom_components/windmill` reports no warnings.
-- [ ] Existing test suite passes unchanged.
+- [x] hassfest run for `custom_components/windmill` reports no warnings.
+- [x] Existing test suite passes unchanged.
 
 ## Non-goals
 
@@ -52,7 +52,7 @@ result is a precondition for a future HACS default-store submission.
 
 | Item | Classification | Validation |
 | --- | --- | --- |
-| `cv.config_entry_only_config_schema` is the intended helper | assumption | Home Assistant developer documentation |
+| `cv.config_entry_only_config_schema` is the intended helper | assumption | Confirmed: helper exists in the pinned Home Assistant version (`uv run python -c ...` import check, 2026-08-02) and hassfest now passes |
 
 ## Validation evidence
 
@@ -60,13 +60,15 @@ Fill during implementation; do not pre-check.
 
 | Check | Command or inspection | Result |
 | --- | --- | --- |
-| Repository guardrails | `python scripts/validate_repository.py` | not run |
+| Repository guardrails | `python scripts/validate_repository.py` | passed (25 tickets checked) |
+| hassfest | `docker run --rm -v <staging>:/github/workspace ghcr.io/home-assistant/hassfest` (2026-08-02, staging without `.venv`) | passed: `Validating config_schema... done`, no warnings, `Invalid integrations: 0` |
+| Test suite, lint, types | `uv run pytest -q`; `uv run ruff check custom_components tests`; `uv run ruff format --check custom_components tests`; `uv run mypy custom_components/windmill` | 385 passed; ruff clean; 31 files formatted; mypy no issues (16 files) |
 
 ## Review evidence
 
-- Reviewer/session:
-- Findings:
-- Resolution:
+- Reviewer/session: not needed (low risk, per AGENTS.md)
+- Findings: none
+- Resolution: n/a
 
 ## Residual risks and follow-up
 
