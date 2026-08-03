@@ -6,6 +6,7 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from freezegun.api import FrozenDateTimeFactory
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
@@ -28,6 +29,7 @@ from custom_components.windmill.const import (
     OPT_RUN_OBSERVATION,
     OPT_RUNNABLE_BUTTONS,
     OPT_RUNNABLES,
+    TRACKED_JOB_TTL_HOURS,
 )
 from custom_components.windmill.coordinator import StartedJobRegistry, TrackedJob
 from tests.test_execution import JOB_ID, PARAMETERLESS_LIGHTS, _press, _run
@@ -301,8 +303,11 @@ async def test_registry_writes_are_serialized_and_batched() -> None:
     assert {job.job_id for job in registry.tracked} == {"job-2", "job-3"}
 
 
-async def test_registry_is_bounded_by_size_and_age() -> None:
+async def test_registry_is_bounded_by_size_and_age(freezer: FrozenDateTimeFactory) -> None:
     """The registry keeps at most the documented number and age of jobs."""
+    # The registry prunes against the wall clock, so the test owns the clock: fixture
+    # timestamps are relative to a frozen instant rather than to whenever the suite runs.
+    freezer.move_to(datetime(2026, 8, 2, 10, 0, tzinfo=UTC))
     saved: list[Any] = []
 
     class _Store:
@@ -313,7 +318,9 @@ async def test_registry_is_bounded_by_size_and_age() -> None:
                         "job_id": "expired",
                         "kind": "script",
                         "path": "u/a/b",
-                        "started_at": (dt_util.utcnow() - timedelta(hours=25)).isoformat(),
+                        "started_at": (
+                            dt_util.utcnow() - timedelta(hours=TRACKED_JOB_TTL_HOURS + 1)
+                        ).isoformat(),
                     },
                     {"job_id": "broken"},
                     "not-a-job",
@@ -327,13 +334,14 @@ async def test_registry_is_bounded_by_size_and_age() -> None:
     await registry.async_load()
     assert registry.tracked == ()
 
+    started_at = dt_util.utcnow()
     for index in range(MAX_TRACKED_JOBS + 5):
         await registry.async_track(
             TrackedJob(
                 job_id=f"job-{index}",
                 kind="script",
                 path="u/a/b",
-                started_at=datetime(2026, 8, 2, 10, 0, tzinfo=UTC) + timedelta(seconds=index),
+                started_at=started_at + timedelta(seconds=index),
             )
         )
 
@@ -341,6 +349,12 @@ async def test_registry_is_bounded_by_size_and_age() -> None:
     assert registry.get("job-0") is None
     assert registry.get(f"job-{MAX_TRACKED_JOBS + 4}") is not None
     assert all(len(entry["jobs"]) <= MAX_TRACKED_JOBS for entry in saved)
+
+    # The age bound also applies to jobs the registry accepted while running, not only to
+    # restored ones: past the retention window every job above is expired.
+    freezer.tick(timedelta(hours=TRACKED_JOB_TTL_HOURS, seconds=MAX_TRACKED_JOBS + 5))
+    assert registry.tracked == ()
+    assert registry.get(f"job-{MAX_TRACKED_JOBS + 4}") is None
 
 
 async def test_registry_stores_no_payloads(hass: HomeAssistant) -> None:

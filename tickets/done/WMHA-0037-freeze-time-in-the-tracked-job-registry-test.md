@@ -1,7 +1,7 @@
 ---
 id: WMHA-0037
 title: Freeze time in the tracked job registry bound test
-status: ready
+status: done
 type: bug
 priority: medium
 risk: low
@@ -54,10 +54,10 @@ until the timestamps are decoupled from the real clock.
 
 ## Acceptance criteria
 
-- [ ] The test passes with the system clock set well after the fixture timestamps.
-- [ ] Dropping the `MAX_TRACKED_JOBS` truncation from `StartedJobRegistry` fails a test.
-- [ ] Dropping the `TRACKED_JOB_TTL_HOURS` pruning from `StartedJobRegistry` fails a test.
-- [ ] The full suite passes: `uv run pytest -q --cov=custom_components.windmill
+- [x] The test passes with the system clock set well after the fixture timestamps.
+- [x] Dropping the `MAX_TRACKED_JOBS` truncation from `StartedJobRegistry` fails a test.
+- [x] Dropping the `TRACKED_JOB_TTL_HOURS` pruning from `StartedJobRegistry` fails a test.
+- [x] The full suite passes: `uv run pytest -q --cov=custom_components.windmill
       --cov-report=term-missing --cov-fail-under=95`.
 
 ## Non-goals
@@ -82,19 +82,35 @@ Fill during implementation; do not pre-check.
 
 | Check | Command or inspection | Result |
 | --- | --- | --- |
-| Repository guardrails | `uv run python scripts/validate_repository.py` | not run |
-| Tests | `uv run pytest -q --cov=custom_components.windmill --cov-report=term-missing --cov-fail-under=95` | not run |
+| Interpreter | `uv run python -VV` | Python 3.14.6, as required |
+| Repository guardrails | `uv run python scripts/validate_repository.py` | passed, 37 tickets checked |
+| Tests | `uv run pytest -q --cov=custom_components.windmill --cov-report=term-missing --cov-fail-under=95` | passed, 401 passed, coverage 97.30% |
+| Lint | `uv run ruff check custom_components tests` | passed |
+| Format | `uv run ruff format --check custom_components tests` | passed, 31 files already formatted |
+| Types | `uv run mypy custom_components/windmill` | passed, 16 source files |
+| Clock independence | Full suite run at real time 2026-08-03 21:56 UTC, ~36 h after the frozen fixture instant `2026-08-02 10:00 UTC` and so past `TRACKED_JOB_TTL_HOURS` | passed; this is the exact condition that produced the reported failure |
+| Size-bound mutation | Replaced `fresh[-MAX_TRACKED_JOBS:]` with `fresh` in `StartedJobRegistry._prune`, ran the suite, reverted | `test_registry_is_bounded_by_size_and_age` failed; 400 passed, 1 failed |
+| Age-bound mutation | Replaced the `job.started_at > cutoff` filter with `list(self._jobs.values())` in `StartedJobRegistry._prune`, ran the suite, reverted | `test_registry_is_bounded_by_size_and_age` failed; 400 passed, 1 failed |
 
 ## Review evidence
 
-- Reviewer/session:
-- Findings:
-- Resolution:
+- Reviewer/session: none. Low-risk, test-only change; `AGENTS.md` requires an independent
+  review for medium- and high-risk work.
+- Findings: n/a
+- Resolution: n/a
 
 ## Residual risks and follow-up
 
-- None recorded
+- The assumption that no other test carries the same wall-clock dependency was not
+  re-verified by inspection; the whole suite passing ~36 h past its newest fixture instant is
+  indirect evidence only. The ticket's own non-goals exclude a sweep.
+- `StartedJobRegistry.async_load` truncates with `rows[-MAX_TRACKED_JOBS:]` independently of
+  `_prune`. Only the `_prune` truncation was mutation-tested; the load-path slice is not
+  separately guarded by this test.
 
 ## Blog notes
 
-- None
+- A time-dependent test that passes when written is worse than one that fails: this one kept
+  reporting green while silently ceasing to check the size bound it existed to guard, because
+  the age bound emptied the registry before the size assertion ran. Both bounds now have
+  their own assertion, and each was confirmed by removing the corresponding production rule.
