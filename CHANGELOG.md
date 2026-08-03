@@ -5,6 +5,31 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-08-03
+
+### Changed
+
+- Plain `http://` base URLs are accepted for any host. Previously HTTP was
+  allowed only for loopback addresses, which rejected the common self-hosted
+  setup — a Windmill instance on the LAN behind a local DNS name and no
+  certificate, such as `http://windmill.home.arpa:8000`. A LAN hostname cannot
+  be told apart from a public one when the config flow validates it, so the
+  rule could not be narrowed; it was replaced by a visible warning instead.
+- The config flow no longer states that HTTP is restricted to loopback.
+
+### Added
+
+- A repair issue whenever the configured base URL uses HTTP on a non-loopback
+  host, stating that the Windmill token and all job payloads are transmitted
+  unencrypted. Loopback raises no issue, and the issue disappears once the
+  entry is reconfigured to `https://`.
+
+### Security
+
+- TLS verification for HTTPS connections is unchanged, and every other base-URL
+  rule still applies: no embedded credentials, no query or fragment, no unsafe
+  path segments.
+
 ## [0.1.1] - 2026-08-03
 
 ### Fixed
