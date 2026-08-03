@@ -425,10 +425,22 @@ async def test_workspace_listing_degrades_to_manual_entry(
     assert _schema_fields(result)[CONF_WORKSPACE] is str
 
 
+async def test_connection_step_accepts_a_plain_http_instance(hass: HomeAssistant) -> None:
+    """A self-hosted instance without a certificate is a supported deployment, not an error."""
+    with patched_client():
+        result = await _start_connection_step(
+            hass, {**CONNECTION_INPUT, CONF_BASE_URL: "http://windmill.home.arpa:8000/"}
+        )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "workspace"
+    assert not result["errors"]
+
+
 @pytest.mark.parametrize(
     ("connection_input", "expected_errors"),
     [
-        ({CONF_BASE_URL: "http://windmill.example"}, {CONF_BASE_URL: "invalid_url"}),
+        ({CONF_BASE_URL: "ftp://windmill.example"}, {CONF_BASE_URL: "invalid_url"}),
         ({CONF_BASE_URL: "https://user:pw@windmill.example"}, {CONF_BASE_URL: "invalid_url"}),
         ({CONF_TOKEN: ""}, {CONF_TOKEN: "invalid_auth"}),
     ],
@@ -684,7 +696,7 @@ async def test_reconfigure_rejects_another_entrys_identity(hass: HomeAssistant) 
 @pytest.mark.parametrize(
     ("user_input", "expected_errors"),
     [
-        ({CONF_BASE_URL: "http://windmill.example"}, {CONF_BASE_URL: "invalid_url"}),
+        ({CONF_BASE_URL: "ftp://windmill.example"}, {CONF_BASE_URL: "invalid_url"}),
         ({CONF_WORKSPACE: "\x00"}, {CONF_WORKSPACE: "invalid_workspace"}),
     ],
 )

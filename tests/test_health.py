@@ -163,12 +163,13 @@ async def _setup_entry(
     capabilities: CapabilityMatrix | None = None,
     health: Any = HEALTH,
     detailed: Any = DETAILED,
+    base_url: str = BASE_URL,
 ) -> MockConfigEntry:
     """Set up one loaded Windmill entry with the supplied feature options."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         title=WORKSPACE,
-        data=ENTRY_DATA,
+        data={**ENTRY_DATA, CONF_BASE_URL: base_url},
         options=options if options is not None else {OPT_DETAILED_HEALTH: True},
     )
     entry.add_to_hass(hass)

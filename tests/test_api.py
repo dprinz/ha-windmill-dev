@@ -75,6 +75,8 @@ def version_mock(aioclient_mock: object) -> None:
         ("https://windmill.example/%72oot/caf%C3%A9", f"{BASE_URL}/root/caf%C3%A9"),
         ("http://localhost:8000/", "http://localhost:8000"),
         ("http://[::1]:8000/", "http://[::1]:8000"),
+        ("http://windmill.home.arpa:8000/", "http://windmill.home.arpa:8000"),
+        ("HTTP://Windmill.Example:80/", "http://windmill.example"),
     ],
 )
 def test_normalize_base_url(value: str, expected: str) -> None:
@@ -88,7 +90,7 @@ def test_normalize_base_url(value: str, expected: str) -> None:
         "",
         "windmill.example",
         "ftp://windmill.example",
-        "http://windmill.example",
+        "http://user:secret@windmill.example",
         "https://user:secret@windmill.example",
         "https://windmill.example?token=secret",
         "https://windmill.example/#fragment",

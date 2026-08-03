@@ -63,8 +63,8 @@ that disappears on its own once the permission works.
 Setup is a guided flow with progressive disclosure:
 
 1. **Connect**: enter the base URL (for example `https://app.windmill.dev` or the URL of your
-   self-hosted instance) and a token. HTTPS is required; HTTP is allowed only for loopback
-   addresses.
+   self-hosted instance) and a token. Plain `http://` is accepted for self-hosted instances
+   without a certificate; a repair issue then reminds you that the token travels unencrypted.
 2. **Workspace**: pick the workspace, or type its ID when the token cannot list workspaces.
 3. **Detected capabilities**: the flow shows what the instance, edition and token support.
    `unauthorized` means the token lacks a permission; `unsupported` means the deployment does not
@@ -275,8 +275,11 @@ exists) if you want them gone.
   accepted in) the configured workspace.
 
 **TLS and connectivity**
-- HTTPS is required; plain HTTP is accepted only for loopback addresses. TLS verification is
-  never weakened — fix the certificate rather than working around it.
+- HTTPS is recommended. Plain HTTP is accepted for any host, because a self-hosted instance on
+  the LAN often has no certificate and a hostname cannot be classified as local at validation
+  time. Whenever the base URL is HTTP on a non-loopback host, the integration raises a repair
+  issue: the token and every job payload travel unencrypted. TLS verification for HTTPS is never
+  weakened — fix the certificate rather than falling back to HTTP.
 - `Cannot connect to Windmill`: check the URL, DNS and that Home Assistant can reach the
   instance. Home Assistant System Health shows reachability per configured entry without exposing
   the token.

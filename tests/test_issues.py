@@ -2,6 +2,7 @@
 
 from datetime import timedelta
 
+import pytest
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
@@ -53,6 +54,27 @@ def _issues(hass: HomeAssistant) -> dict[str, ir.IssueEntry]:
         for issue in registry.issues.values()
         if issue.domain == DOMAIN
     }
+
+
+async def test_unencrypted_http_instance_is_reported(hass: HomeAssistant) -> None:
+    """A base URL that sends the token in the clear across a network is an actionable repair."""
+    await _setup_health_entry(hass, base_url="http://windmill.home.arpa:8000")
+
+    issue = _issues(hass)["insecure_transport"]
+    assert issue.translation_key == "insecure_transport"
+    assert issue.severity is ir.IssueSeverity.WARNING
+    assert issue.is_fixable is False
+    assert issue.translation_placeholders == {"host": "windmill.home.arpa"}
+
+
+@pytest.mark.parametrize("base_url", ["https://windmill.example", "http://localhost:8000"])
+async def test_secure_or_loopback_instance_is_not_reported(
+    hass: HomeAssistant, base_url: str
+) -> None:
+    """HTTPS is safe and loopback bytes never leave the host, so neither is a repair."""
+    await _setup_health_entry(hass, base_url=base_url)
+
+    assert "insecure_transport" not in _issues(hass)
 
 
 async def test_denied_permission_for_an_enabled_feature_is_reported(hass: HomeAssistant) -> None:

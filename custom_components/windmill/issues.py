@@ -10,12 +10,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import datetime, timedelta
 from typing import Any
+from urllib.parse import urlsplit
 
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import dt as dt_util
 
-from .api import CapabilityAvailability, CapabilityStatus
+from .api import CapabilityAvailability, CapabilityStatus, is_insecure_transport
 from .const import (
     DOMAIN,
     FEATURE_DEFAULTS,
@@ -55,6 +56,7 @@ def async_evaluate_issues(
     drift_since: dict[str, datetime],
 ) -> None:
     """Create, keep or delete every issue this config entry owns."""
+    _async_insecure_transport_issue(hass, entry_id, runtime)
     _async_capability_issues(hass, entry_id, options, runtime)
     _async_worker_drift_issue(hass, entry_id, runtime, drift_since)
 
@@ -66,6 +68,32 @@ def async_delete_issues(hass: HomeAssistant, entry_id: str) -> None:
     for issue in list(registry.issues.values()):
         if issue.domain == DOMAIN and issue.issue_id.startswith(f"{entry_id}_"):
             ir.async_delete_issue(hass, DOMAIN, issue.issue_id)
+
+
+@callback
+def _async_insecure_transport_issue(
+    hass: HomeAssistant, entry_id: str, runtime: WindmillRuntimeData
+) -> None:
+    """Report a base URL that carries the Windmill token unencrypted across a network.
+
+    This is not transient and the user can act on it — by putting a certificate in front of
+    Windmill or by reconfiguring the entry — so it is a repair rather than a log line. The
+    URL is never placed in the issue: only the host, which the user typed themselves.
+    """
+    issue_id = f"{entry_id}_insecure_transport"
+    base_url = runtime.client.base_url
+    if not is_insecure_transport(base_url):
+        ir.async_delete_issue(hass, DOMAIN, issue_id)
+        return
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        issue_id,
+        is_fixable=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key="insecure_transport",
+        translation_placeholders={"host": urlsplit(base_url).hostname or ""},
+    )
 
 
 @callback

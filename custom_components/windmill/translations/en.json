@@ -10,7 +10,7 @@
           "token": "Token"
         },
         "data_description": {
-          "base_url": "For example {cloud_url} or the URL of your self-hosted instance. HTTP is allowed only for loopback addresses.",
+          "base_url": "For example {cloud_url} or the URL of your self-hosted instance. Plain HTTP works too, but sends the token unencrypted.",
           "token": "A least-privilege Windmill user token. Add `workspaces:read` if you want to pick the workspace from a list."
         }
       },
@@ -74,7 +74,7 @@
       "cannot_connect": "Cannot connect to Windmill.",
       "insufficient_permission": "The token cannot access this workspace.",
       "invalid_auth": "The token is invalid.",
-      "invalid_url": "Enter a valid HTTPS URL. HTTP is allowed only for loopback addresses.",
+      "invalid_url": "Enter a valid HTTP or HTTPS URL without credentials, query or fragment.",
       "invalid_workspace": "The workspace is invalid or unavailable.",
       "server_error": "Windmill is temporarily unavailable.",
       "unexpected_response": "Windmill returned an unexpected response."
@@ -313,6 +313,10 @@
     }
   },
   "issues": {
+    "insecure_transport": {
+      "title": "Windmill is reached over unencrypted HTTP",
+      "description": "This integration talks to `{host}` over plain HTTP, so the Windmill token and every job payload travel unencrypted and can be read or altered by anyone on the network path. This is accepted for a self-hosted instance without a certificate. To remove this message, put a TLS-terminating reverse proxy in front of Windmill and reconfigure the integration to the `https://` URL."
+    },
     "missing_permission": {
       "title": "Windmill permission missing for an enabled feature",
       "description": "The Windmill token used by this integration is not allowed to read `{capability}`, which the enabled `{feature}` feature needs. Grant the permission to the token in Windmill, or turn the feature off in the integration options. This message disappears on its own once the permission works again."

@@ -346,6 +346,17 @@ def _is_loopback(host: str) -> bool:
         return False
 
 
+def is_insecure_transport(base_url: str) -> bool:
+    """Return whether a base URL sends the token unencrypted across a network.
+
+    Plain HTTP is accepted for self-hosted instances that have no certificate, because a LAN
+    hostname cannot be told apart from a public one at validation time. Loopback is exempt:
+    those bytes never leave the Home Assistant host, so there is nothing to intercept.
+    """
+    parts = urlsplit(base_url)
+    return parts.scheme == "http" and not _is_loopback(parts.hostname or "")
+
+
 def _is_bounded_text(value: Any) -> TypeIs[str]:
     """Return whether an untrusted value is a short non-empty string."""
     return isinstance(value, str) and bool(value.strip()) and len(value) <= MAX_TEXT_FIELD_LENGTH
@@ -367,7 +378,12 @@ def _is_uuid(value: Any) -> TypeIs[str]:
 
 
 def normalize_base_url(value: str) -> str:
-    """Normalize and validate a Windmill base URL without weakening TLS."""
+    """Normalize and validate a Windmill base URL.
+
+    Both HTTP and HTTPS are accepted; `is_insecure_transport` classifies the result so the
+    unencrypted case surfaces as a repair issue instead of a rejected config flow. TLS
+    verification for HTTPS is untouched, and every structural rule below still holds.
+    """
     if not isinstance(value, str) or not value.strip():
         raise WindmillUrlError("Base URL is required")
 
@@ -392,8 +408,6 @@ def normalize_base_url(value: str) -> str:
         raise WindmillUrlError("Base URL hostname is invalid") from err
     if not host:
         raise WindmillUrlError("Base URL hostname is required")
-    if scheme == "http" and not _is_loopback(host):
-        raise WindmillUrlError("Remote Windmill instances must use HTTPS")
 
     path_segments: list[str] = []
     for raw_segment in parts.path.split("/"):

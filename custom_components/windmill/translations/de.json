@@ -10,7 +10,7 @@
           "token": "Token"
         },
         "data_description": {
-          "base_url": "Zum Beispiel {cloud_url} oder die URL deiner selbst gehosteten Instanz. HTTP ist nur für Loopback-Adressen erlaubt.",
+          "base_url": "Zum Beispiel {cloud_url} oder die URL deiner selbst gehosteten Instanz. Einfaches HTTP funktioniert ebenfalls, überträgt das Token aber unverschlüsselt.",
           "token": "Ein Windmill-Benutzertoken mit minimalen Rechten. Ergänze `workspaces:read`, wenn du den Workspace aus einer Liste auswählen möchtest."
         }
       },
@@ -74,7 +74,7 @@
       "cannot_connect": "Verbindung zu Windmill nicht möglich.",
       "insufficient_permission": "Das Token kann nicht auf diesen Workspace zugreifen.",
       "invalid_auth": "Das Token ist ungültig.",
-      "invalid_url": "Gib eine gültige HTTPS-URL ein. HTTP ist nur für Loopback-Adressen erlaubt.",
+      "invalid_url": "Gib eine gültige HTTP- oder HTTPS-URL ohne Zugangsdaten, Query oder Fragment ein.",
       "invalid_workspace": "Der Workspace ist ungültig oder nicht verfügbar.",
       "server_error": "Windmill ist vorübergehend nicht verfügbar.",
       "unexpected_response": "Windmill hat eine unerwartete Antwort zurückgegeben."
@@ -313,6 +313,10 @@
     }
   },
   "issues": {
+    "insecure_transport": {
+      "title": "Windmill wird über unverschlüsseltes HTTP erreicht",
+      "description": "Diese Integration spricht mit `{host}` über einfaches HTTP. Das Windmill-Token und alle Job-Daten werden dadurch unverschlüsselt übertragen und können von jedem auf dem Netzwerkpfad mitgelesen oder verändert werden. Für eine selbst gehostete Instanz ohne Zertifikat ist das zulässig. Um diese Meldung zu entfernen, stelle einen Reverse Proxy mit TLS vor Windmill und konfiguriere die Integration auf die `https://`-URL um."
+    },
     "missing_permission": {
       "title": "Windmill-Berechtigung für ein aktiviertes Feature fehlt",
       "description": "Das von dieser Integration verwendete Windmill-Token darf `{capability}` nicht lesen, was das aktivierte Feature `{feature}` benötigt. Erteile dem Token die Berechtigung in Windmill oder schalte das Feature in den Integrationsoptionen aus. Diese Meldung verschwindet von selbst, sobald die Berechtigung wieder funktioniert."
