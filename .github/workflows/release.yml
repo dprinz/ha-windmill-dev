@@ -20,10 +20,16 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
       - name: Verify the tag targets the default branch
+        # The branch name comes from the event payload rather than a literal: this step
+        # silently stopped matching reality once the default branch was renamed, and a
+        # rename must not be able to break releases again. It reaches the shell through an
+        # env var, never interpolated into the command.
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          git fetch --no-tags --depth=50 origin main
+          git fetch --no-tags --depth=50 origin "$DEFAULT_BRANCH"
           if ! git merge-base --is-ancestor HEAD FETCH_HEAD; then
-            echo "Tag ${GITHUB_REF_NAME} does not point to a commit on main; refusing to release."
+            echo "Tag ${GITHUB_REF_NAME} does not point to a commit on ${DEFAULT_BRANCH}; refusing to release."
             exit 1
           fi
       - name: Build the release archive
