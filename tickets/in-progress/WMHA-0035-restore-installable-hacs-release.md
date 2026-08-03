@@ -54,6 +54,33 @@ it:
   push trigger to `main`, so no push to the default branch has triggered CI since the
   rename. Pull-request triggers are unaffected.
 
+## Second failure: an assetless release
+
+Recorded on 2026-08-03 after the first attempt to close this ticket. The
+workflow fix landed on `master` (`d50eecd`), but HACS still reported a download
+error — with a different cause behind the same message.
+
+| Time (UTC) | Event |
+| --- | --- |
+| 13:07:36 | Release `v0.1.0` created by hand in the GitHub UI (`name: ""`, `body: "V 0.1.0"`), which also created the tag |
+| 13:08:51 | That release published |
+| 13:08:56 | The tag push triggered `release.yml` (run 30816597810) |
+| 13:09:03 | The workflow created its own draft, `untagged-a85436242e64a32e059b`, with `windmill.zip` |
+
+Creating a release in the UI creates the tag as a side effect, which starts the
+release workflow — so the hand-made release and the workflow's draft are two
+separate objects. The published one has `assets: []`; the archive lives in the
+draft beside it. HACS resolved the version correctly as `v0.1.0` this time, so
+the fallback to a commit SHA was gone, but `releases/download/v0.1.0/windmill.zip`
+still 404s because that release carries no asset.
+
+Run 30816597810 also confirms the workflow fix: "Verify the tag targets the
+default branch" passed against `master`, and the archive was built from
+`d50eecd`, so it contains the `event.py` fix.
+
+The drafts were then deleted, but the assetless published release still exists
+and the tag `v0.1.0` cannot be removed. `0.1.1` therefore supersedes it.
+
 ## Required context
 
 - `AGENTS.md`
@@ -91,10 +118,13 @@ it:
 - [x] The three push-triggered workflows list `master`.
 - [x] All four workflow files still parse as YAML and keep their previous `permissions`
       blocks.
+- [x] The manifest version and `CHANGELOG.md` name the version that will actually be
+      released. Bumped to `0.1.1` on 2026-08-03; see the superseded non-goal below.
 - [ ] A published (non-draft) GitHub release exists whose tag matches
       `custom_components/windmill/manifest.json` and which carries a `windmill.zip` asset
       built by `scripts/build_release.py`. **Human step — see "Handover".** This criterion
-      stays open until the requester publishes.
+      stays open until the requester publishes. Note that the first attempt satisfied
+      "published" but not "carries the asset", which is why the criterion names both.
 
 ## Non-goals
 
@@ -104,7 +134,12 @@ it:
 - Changing `hacs.json`, the ZIP layout or `scripts/build_release.py`. R-006 verified the
   archive layout and the release run confirmed it builds
   (`sha256:f2514257f89ffb394d3eeeef2e57d9f48d3e0834cffd93a7c2ed599af0549022`).
-- Bumping the version. `0.1.0` was never published, so it is still unreleased.
+- ~~Bumping the version. `0.1.0` was never published, so it is still
+  unreleased.~~ **Superseded on 2026-08-03**, not to match the implementation but
+  because the premise stopped being true: `v0.1.0` *was* published (release id
+  364224114, `published_at` 13:08:51), and the tag can no longer be removed. The
+  version bump is now required to satisfy the outcome, so it moves into scope.
+  See "Second failure: an assetless release".
 - Submitting to the HACS default store.
 
 ## Constraints
@@ -133,6 +168,9 @@ it:
 | Test, lint and type checks | `pytest`, `ruff`, `mypy` | not run — the change touches no Python or integration code, only workflow YAML. CI runs them on the branch |
 | Branch guard intact | inspection of `release.yml` | 2026-08-03: `git merge-base --is-ancestor HEAD FETCH_HEAD` and `exit 1` unchanged; only the fetched ref is now resolved from the event payload |
 | Default branch and releases on GitHub | GitHub API: `list_branches`, `list_releases`, `list_tags` | 2026-08-03: branches `master`, `agent/agentic-development-foundation`; releases both `draft: true`; tag `v0.1.0` at `d46902f` |
+| Release workflow on the fixed branch | run 30816597810 (`gh` job 91695784864) | 2026-08-03: success on `d50eecd`. "Verify the tag targets the default branch" passed against `master`, proving the fix; the draft URL is in the log |
+| Published `v0.1.0` carries no asset | GitHub API `get_release_by_tag` | 2026-08-03: release id 364224114, `draft: false`, `assets: []`. Still present after the drafts were deleted |
+| Version bump consistent | `grep '"version"' custom_components/windmill/manifest.json`, `CHANGELOG.md` | 2026-08-03: `0.1.1` in both; `scripts/build_release.py` refuses a tag that disagrees |
 | Published release installs through HACS | requester's Home Assistant instance | not run — blocked on the human publishing step |
 
 ## Review evidence
@@ -146,30 +184,45 @@ it:
 ## Handover
 
 The workflow fix does not make the integration installable on its own — only a published
-release does. The requester chose to re-cut `v0.1.0` on `master` HEAD rather than publish
-the existing draft, because tag `v0.1.0` points at `d46902f` and `master` has since gained
-a code fix (`4dbc87e`, `custom_components/windmill/event.py`) that the draft's archive does
-not contain. `0.1.0` was never published, so the tag is free to move and `CHANGELOG.md`
-stays accurate.
+release carrying `windmill.zip` does.
+
+Route, revised on 2026-08-03: `0.1.1` supersedes `0.1.0`. The original plan re-cut
+`v0.1.0`, but the tag can no longer be removed and its release was published without an
+asset, so that route is closed. There is no functional difference between the two versions
+beyond the release-automation fix; the bump exists to get a clean, installable tag.
 
 Steps, all requiring repository write access:
 
-1. Delete both draft releases in the GitHub UI (Releases → each draft → Delete).
-2. Delete the tag: `git push origin :refs/tags/v0.1.0` and `git tag -d v0.1.0`.
-3. Re-tag the merged default branch: `git checkout master && git pull` — this must include
-   the workflow fix from this ticket — then `git tag -a v0.1.0 -m "Windmill v0.1.0"` and
-   `git push origin v0.1.0`.
-4. Wait for the `Release` workflow to finish and produce a new draft with `windmill.zip`.
-5. Review the notes and **publish** the release (uncheck "Set as a pre-release" as
-   appropriate, then "Publish release").
-6. In Home Assistant, retry the HACS download and record the result in this ticket's
+1. Merge this branch into `master`. The tag must point at a commit that already contains
+   the workflow fix, otherwise the release workflow cannot resolve its reference.
+2. Tag the merged default branch and push:
+   `git checkout master && git pull && git tag -a v0.1.1 -m "Windmill v0.1.1" &&
+   git push origin v0.1.1`.
+3. Wait for the `Release` workflow. It creates a **draft** containing `windmill.zip`.
+4. Open that draft, review the notes, and **publish** it. Do not create a release by hand
+   in the GitHub UI — that creates the tag as a side effect, races the workflow and yields
+   an assetless release. This is exactly how the first attempt failed.
+5. Verify before touching Home Assistant:
+   `https://github.com/dprinz/ha-windmill-dev/releases/download/v0.1.1/windmill.zip` must
+   serve the archive.
+6. Delete the assetless `v0.1.0` release (id 364224114). It cannot break HACS's default
+   resolution once `v0.1.1` is the latest release, but a user can still select `v0.1.0`
+   explicitly in HACS and hit the same 404. The tag itself may stay.
+7. In Home Assistant, retry the HACS download and record the result in this ticket's
    validation evidence before moving it to `tickets/done/`.
 
 ## Residual risks and follow-up
 
-- Nothing enforces that a release is published rather than left as a draft. A stale draft
-  reproduces exactly this 404 for every user. A follow-up ticket could add a scheduled or
-  post-release check that the latest release is non-draft and carries the expected asset.
+- Nothing enforces that a release is published rather than left as a draft, **and nothing
+  enforces that a published release carries `windmill.zip`**. Both failure modes have now
+  occurred, one after the other, and both surface to the user as the same 404. A follow-up
+  ticket should add a check — triggered on `release: published` — that the release carries
+  an asset named by `hacs.json`'s `filename` and that its tag matches the manifest version,
+  failing loudly otherwise. That check would have caught the assetless release within
+  seconds instead of after a round trip through a user's Home Assistant instance.
+- A release created by hand in the GitHub UI creates the tag as a side effect and therefore
+  races the tag-triggered workflow. Nothing prevents this; the release documentation should
+  state that the tag push is the only supported entry point.
 - The HACS validator runs from a floating container image (R-005), so a passing validation
   is only reproducible per run date.
 - Observed while validating, out of scope here: `uv run` refuses to start in a fresh

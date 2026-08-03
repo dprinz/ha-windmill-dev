@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-08-03
+
+### Fixed
+
+- Release automation targets the repository's actual default branch. The
+  workflows still named `main` after the branch was renamed to `master`, so the
+  tag verification in the release workflow could no longer resolve its
+  reference and the push-triggered workflows stopped running.
+
+### Note
+
+- `0.1.0` is not installable. Its GitHub release carries no `windmill.zip`
+  asset, so HACS reports a 404 for
+  `releases/download/v0.1.0/windmill.zip`. The tag cannot be removed, so `0.1.1`
+  supersedes it. There is no functional difference between the two versions
+  beyond the release automation fix.
+
 ## [0.1.0] - 2026-08-02
 
 ### Added
