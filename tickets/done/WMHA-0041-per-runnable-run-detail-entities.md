@@ -1,7 +1,7 @@
 ---
 id: WMHA-0041
 title: Expose per-runnable run detail entities for selected jobs
-status: in-progress
+status: done
 type: feature
 priority: medium
 risk: medium
@@ -148,11 +148,44 @@ Run on 2026-08-04 with `uv run python -VV` reporting CPython 3.14.6.
 
 ## Review evidence
 
-- Reviewer/session: not yet performed. This is medium-risk work — it adds a polling loop, a
-  persistent store and a device model — so `AGENTS.md` asks for an independent review in a fresh
-  session before this ticket moves to `done/`.
-- Findings: pending review.
-- Resolution: pending review.
+- Reviewer/session: independent review on 2026-08-04 by a session that did not implement this
+  ticket. Reviewed in the order `AGENTS.md` prescribes — ticket, then the complete diff of
+  `17dc74a`, `305ab85` and `15deb3e`, then tests and the ADRs, and the implementer's narrative
+  last. Upstream claims were re-checked against the pinned Windmill source rather than against
+  the plan. Every validation command was re-run in the reviewing session: 435 tests, 97.5%
+  coverage, lint, format, types and guardrails green.
+- Findings:
+  1. **A degraded capability deleted user configuration (medium, fixed).**
+     `_async_prune_runnable_devices` was driven by whether the coordinator existed, so a `runs`
+     probe answering 503, timing out or being rate-limited during one restart pruned every
+     per-runnable device — taking its entities, their entity ids, names, areas and history with
+     it. That is exactly the "entity existence follows volatile Windmill state" that ADR-0002
+     forbids and that the function's own docstring invokes. Pruning now follows configuration
+     (`selections if _feature_enabled(entry, OPT_RUNNABLE_DETAILS) else ()`), which keeps the
+     deselection behaviour the ticket asks for and drops the devices when the feature is turned
+     off. Covered by `test_a_degraded_capability_never_deletes_a_runnable_device` and
+     `test_turning_the_feature_off_drops_the_runnable_devices`; the first fails without the fix.
+  2. **A retried job never reaches its runnable (low, documented, WMHA-0044).** Selections are
+     matched on `(job_kind, path)`, but Windmill re-pushes a failed job with a retry policy as
+     `job_kind = "singlestepflow"` on the original path. The successful retry of a selected
+     script is therefore invisible to the detail entities — and to the pre-existing `selected`
+     run scope, which uses the same comparison. Not fixed here: widening a kind match needs
+     live evidence, so it became a backlog ticket and a documented limitation.
+  3. **A restored status could leave the enum (nit, fixed).** `RunnableRunState.from_dict`
+     accepted any parsable `JobState`, so a record claiming `running` would have reached a
+     sensor whose options are the three completion states. The terminal states now live once in
+     `api.COMPLETION_STATES`, used by `is_completed`, the restore path and the entity options.
+  4. **Documentation drift (nit, fixed).** The README announced "four entities" and listed
+     five, and the option description in all three translation files omitted the next-run
+     entity that `WMHA-0042` added to the same option.
+  5. Checked and found correct: no payload field reaches state, attributes, diagnostics or the
+     store; the store is registered in `ENTRY_STORES`; a removed selection is projected out of
+     the restored state rather than merged; the fast tier notifies without rescheduling the
+     slow one; the slow tier re-reads its own state after each await, so the interleaving with
+     the fast tier cannot move a completion backwards; `available` degrades to `True` only when
+     no resolver exists at all.
+- Resolution: findings 1, 3 and 4 fixed in this review pass with tests; finding 2 tracked as
+  WMHA-0044 and recorded as a known limitation. No open findings.
 
 ## Deviations from the plan
 

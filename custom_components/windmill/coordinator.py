@@ -18,6 +18,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .api import (
+    COMPLETION_STATES,
     AddressingMode,
     CapabilityMatrix,
     JobState,
@@ -724,6 +725,10 @@ class RunnableRunState:
         try:
             last_state = None if raw_state is None else JobState(str(raw_state))
         except ValueError:
+            last_state = None
+        # A last status is a completion by definition, and the enum sensor offers exactly those
+        # three options. A record that claims anything else is unreadable, not authoritative.
+        if last_state is not None and last_state not in COMPLETION_STATES:
             last_state = None
         duration = data.get("last_duration_ms")
         return cls(

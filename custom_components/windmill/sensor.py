@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import WindmillConfigEntry
-from .api import JobState, WindmillHealthState
+from .api import COMPLETION_STATES, WindmillHealthState
 from .const import FEATURE_DEFAULTS, OPT_WORKER_DETAILS, OPT_WORKER_GROUPS
 from .entity import (
     WindmillHealthEntity,
@@ -23,9 +23,7 @@ from .models import WindmillRuntimeData
 HEALTH_STATES = [state.value for state in WindmillHealthState]
 # A "last status" is by definition the outcome of a finished run, so the enum omits the two
 # states a job passes through on its way there.
-COMPLETION_STATES = [
-    state.value for state in (JobState.SUCCESS, JobState.FAILURE, JobState.CANCELED)
-]
+COMPLETION_OPTIONS = [state.value for state in COMPLETION_STATES]
 
 
 async def async_setup_entry(
@@ -306,7 +304,7 @@ class WindmillRunnableLastStatusSensor(WindmillRunnableRunEntity, SensorEntity):
 
     _key = "runnable_last_status"
     _attr_device_class = SensorDeviceClass.ENUM
-    _attr_options = COMPLETION_STATES
+    _attr_options = COMPLETION_OPTIONS
 
     @property
     def native_value(self) -> str | None:

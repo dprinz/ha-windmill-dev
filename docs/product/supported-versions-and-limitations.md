@@ -105,6 +105,12 @@ These are accepted, documented trade-offs of v1. Each links its source.
     simultaneously queued jobs exceeds the client's row and response-size bounds, so the run poll
     fails closed and retries; the run entities become unavailable until the queue drains. Health,
     workers and execution are unaffected (WMHA-0038).
+12. **A retried job is not matched to its runnable.** Windmill re-pushes a failed job that has a
+    retry policy as a single-step flow (`job_kind = "singlestepflow"`) on the original path, so it
+    matches neither the per-runnable detail entities nor the `selected` run scope, both of which
+    compare kind and path. For a selected script with retries, the detail entities keep showing
+    the first failed attempt and the successful retry stays invisible. Found by review, not by a
+    live reproduction; widening the match needs live evidence first (WMHA-0044).
 
 ## Evidence gaps carried into the release
 

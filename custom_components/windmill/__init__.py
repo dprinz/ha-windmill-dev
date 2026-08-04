@@ -228,8 +228,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WindmillConfigEntry) -> 
         config_entry_id=entry.entry_id,
         **build_device_info(entry.entry_id, entry.title, entry.runtime_data),
     )
+    # What survives is decided by configuration, never by a probe result: a runs capability
+    # that answers 503 during one restart builds no coordinator, and treating that as "no
+    # selections" would delete devices the user still has configured.
     _async_prune_runnable_devices(
-        hass, entry, () if runnable_run_coordinator is None else selections
+        hass, entry, selections if _feature_enabled(entry, OPT_RUNNABLE_DETAILS) else ()
     )
     drift_since: dict[str, datetime] = {}
 

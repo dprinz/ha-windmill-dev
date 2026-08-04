@@ -1,7 +1,7 @@
 ---
 id: WMHA-0042
 title: Show the next scheduled run of a selected runnable
-status: in-progress
+status: done
 type: feature
 priority: medium
 risk: medium
@@ -107,11 +107,26 @@ Run on 2026-08-04 with `uv run python -VV` reporting CPython 3.14.6.
 
 ## Review evidence
 
-- Reviewer/session: not yet performed. Medium risk, so `AGENTS.md` asks for an independent
-  review in a fresh session before this ticket moves to `done/`. Review it together with
-  `WMHA-0041`, whose coordinator it extends.
-- Findings: pending review.
-- Resolution: pending review.
+- Reviewer/session: independent review on 2026-08-04 by a session that did not implement this
+  ticket, together with `WMHA-0041` as its ticket asked. Ticket, then diff, then tests; the
+  upstream claims behind `scheduled_for` were re-read in the pinned source.
+- Findings:
+  1. **Documentation drift (nit, fixed).** The `runnable_details` option description named
+     last run, status and duration but not the next run this ticket added to the same option.
+     Corrected in `strings.json` and both translations; the README table said "four entities"
+     while listing five.
+  2. Checked and found correct: `scheduled_for` is parsed only on the queued branch, so a
+     completed row can never carry one; `_earliest_scheduled` requires state `QUEUED` *and* a
+     future timestamp, which correctly separates a reserved slot from a job waiting for a free
+     worker; `dt_util.utcnow` is used throughout, never `datetime.now`; the value is re-derived
+     from every observation instead of being carried forward, so a disabled schedule clears it;
+     `as_dict` deliberately omits it, so a restart cannot announce a stale slot; no request, no
+     endpoint and no capability entry were added, and `pyproject.toml`/`uv.lock` are untouched.
+  3. Not a defect, but worth naming: the entity depends on the same `(job_kind, path)` match as
+     `WMHA-0041`, so it inherits WMHA-0044. A schedule attached to a runnable whose reserved row
+     carries an unexpected kind would report no next run rather than a wrong one — it fails in
+     the safe direction.
+- Resolution: finding 1 fixed in this review pass. No open findings.
 
 ## Residual risks and follow-up
 

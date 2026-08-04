@@ -49,7 +49,7 @@
           "update_entity": "Nur für Self-Hosting. Verwaltete Windmill-Cloud-Deployments werden von Windmill aktualisiert.",
           "runnable_buttons": "Optional: fügt pro ausgewähltem Runnable ohne Argumente eine Schaltfläche hinzu. Die Aktion bleibt in jedem Fall verfügbar.",
           "run_scope": "Schränkt die Run-Sensoren und die Run-Ereignisentität auf ausgewählte Skripte und Flows oder auf von dieser Integration gestartete Jobs ein. Ein Wechsel des Umfangs wiederholt keine älteren Abschlüsse.",
-          "runnable_details": "Ein Gerät je ausgewähltem Skript oder Flow mit letztem Lauf, Status und Dauer."
+          "runnable_details": "Ein Gerät je ausgewähltem Skript oder Flow mit letztem Lauf, Status, Dauer und nächstem geplanten Lauf."
         }
       },
       "reauth_confirm": {
@@ -208,7 +208,7 @@
           "update_entity": "Nur für Self-Hosting. Verwaltete Windmill-Cloud-Deployments werden von Windmill aktualisiert.",
           "runnable_buttons": "Optional: fügt pro ausgewähltem Runnable ohne Argumente eine Schaltfläche hinzu. Die Aktion bleibt in jedem Fall verfügbar.",
           "run_scope": "Schränkt die Run-Sensoren und die Run-Ereignisentität auf ausgewählte Skripte und Flows oder auf von dieser Integration gestartete Jobs ein. Ein Wechsel des Umfangs wiederholt keine älteren Abschlüsse.",
-          "runnable_details": "Ein Gerät je ausgewähltem Skript oder Flow mit letztem Lauf, Status und Dauer."
+          "runnable_details": "Ein Gerät je ausgewähltem Skript oder Flow mit letztem Lauf, Status, Dauer und nächstem geplanten Lauf."
         }
       },
       "runnables": {

@@ -15,6 +15,9 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry, async_
 
 from custom_components.windmill.api import (
     AddressingMode,
+    CapabilityAvailability,
+    CapabilityReason,
+    CapabilityStatus,
     JobState,
     RunnableDetails,
     RunnableKind,
@@ -59,6 +62,10 @@ DETAILS = RunnableDetails(
     schema_supported=True,
 )
 BASE_OPTIONS = {OPT_INSTANCE_HEALTH: False, OPT_RUN_OBSERVATION: False}
+# What a single 503, timeout or rate limit on the runs probe leaves behind at setup.
+TEMPORARILY_UNAVAILABLE = CapabilityAvailability(
+    CapabilityStatus.TEMPORARILY_UNAVAILABLE, CapabilityReason.TEMPORARY_FAILURE
+)
 YESTERDAY = datetime(2026, 8, 3, 22, 15, tzinfo=UTC)
 TODAY = datetime(2026, 8, 4, 6, 30, tzinfo=UTC)
 
@@ -493,6 +500,56 @@ async def test_details_survive_a_workspace_that_cannot_be_discovered(
     )
 
 
+async def test_a_degraded_capability_never_deletes_a_runnable_device(
+    hass: HomeAssistant,
+) -> None:
+    """A Windmill hiccup at setup must not destroy registry entries.
+
+    Entity existence follows configuration, not volatile Windmill state (ADR-0002). Pruning on
+    a missing coordinator conflated "the user deselected this" with "the runs probe answered
+    503 during this restart", and the second case would have taken the device, its entities,
+    their entity ids, names, areas and history with it.
+    """
+    entry, _ = await _setup_entry(hass)
+    devices = dr.async_get(hass)
+    identifiers = {(DOMAIN, f"{entry.entry_id}_script_{LIGHTS_PATH}")}
+    assert devices.async_get_device(identifiers=identifiers) is not None
+    before = _entity_id(hass, entry.entry_id, "sensor", "runnable_last_run", LIGHTS_PATH)
+
+    with patched_client(capabilities=_capabilities(runs=TEMPORARILY_UNAVAILABLE)):
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert entry.runtime_data.runnable_run_coordinator is None
+    assert devices.async_get_device(identifiers=identifiers) is not None
+    assert _entity_id(hass, entry.entry_id, "sensor", "runnable_last_run", LIGHTS_PATH) == before
+
+    with patched_client(runnable_jobs={}):
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert _state(hass, entry.entry_id, "sensor", "runnable_last_run", LIGHTS_PATH) is not None
+
+
+async def test_turning_the_feature_off_drops_the_runnable_devices(hass: HomeAssistant) -> None:
+    """Disabling the option is a configuration change, so its devices do go."""
+    entry, _ = await _setup_entry(hass)
+    devices = dr.async_get(hass)
+    identifiers = {(DOMAIN, f"{entry.entry_id}_script_{LIGHTS_PATH}")}
+    assert devices.async_get_device(identifiers=identifiers) is not None
+
+    hass.config_entries.async_update_entry(
+        entry, options={**entry.options, OPT_RUNNABLE_DETAILS: False}
+    )
+    await hass.async_block_till_done()
+    with patched_client():
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert devices.async_get_device(identifiers=identifiers) is None
+    assert devices.async_get_device(identifiers={(DOMAIN, entry.entry_id)}) is not None
+
+
 async def test_a_rejected_token_asks_for_reauthentication(hass: HomeAssistant) -> None:
     """An authentication failure of the detail read starts reauth instead of failing silently."""
     entry, _ = await _setup_entry(hass, runnable_jobs=WindmillAuthenticationError("rejected"))
@@ -551,6 +608,13 @@ def test_unreadable_stored_state_is_discarded() -> None:
     assert restored[("script", LIGHTS_PATH)].last_state is None
     assert restored[("script", LIGHTS_PATH)].last_duration_ms is None
     assert restored[("flow", NIGHT_PATH)] == RunnableRunState()
+
+    # A parsable state that is not a completion would reach an enum sensor whose options are
+    # exactly the three terminal states, so it is discarded like an unparsable one.
+    running = load_runnable_run_states(
+        {"runnables": {f"script:{LIGHTS_PATH}": {"last_state": JobState.RUNNING.value}}}
+    )
+    assert running[("script", LIGHTS_PATH)].last_state is None
 
 
 def _in(delta: timedelta) -> datetime:

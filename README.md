@@ -153,7 +153,7 @@ One pair per worker group `<group>`:
 ### Job details per runnable (`runnable_details`, opt-in)
 
 Every script and flow you selected under **Configure → Scripts and flows** becomes its own device
-below the workspace device, carrying four entities:
+below the workspace device, carrying five entities:
 
 | Entity | Description |
 | --- | --- |

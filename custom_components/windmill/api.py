@@ -257,6 +257,11 @@ class JobState(StrEnum):
     CANCELED = "canceled"
 
 
+# The terminal states, in the order the enum sensor offers them. One definition, because a
+# stored "last status" and the options of the entity reporting it must not drift apart.
+COMPLETION_STATES: tuple[JobState, ...] = (JobState.SUCCESS, JobState.FAILURE, JobState.CANCELED)
+
+
 @dataclass(frozen=True, slots=True)
 class WindmillJob:
     """Bounded non-sensitive projection of one top-level job."""
@@ -276,7 +281,7 @@ class WindmillJob:
     @property
     def is_completed(self) -> bool:
         """Return whether the job reached a terminal state."""
-        return self.state in {JobState.SUCCESS, JobState.FAILURE, JobState.CANCELED}
+        return self.state in COMPLETION_STATES
 
 
 @dataclass(frozen=True, slots=True)

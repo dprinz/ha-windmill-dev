@@ -49,7 +49,7 @@
           "update_entity": "Self-hosted only. Managed Windmill Cloud deployments are updated by Windmill.",
           "runnable_buttons": "Optional: adds one button per selected runnable that needs no arguments. The action stays available either way.",
           "run_scope": "Narrows the run sensors and the run event entity to selected scripts and flows or to jobs this integration started. A scope change never replays older completions.",
-          "runnable_details": "One device per selected script or flow with its last run, status and duration."
+          "runnable_details": "One device per selected script or flow with its last run, status, duration and next scheduled run."
         }
       },
       "reauth_confirm": {
@@ -208,7 +208,7 @@
           "update_entity": "Self-hosted only. Managed Windmill Cloud deployments are updated by Windmill.",
           "runnable_buttons": "Optional: adds one button per selected runnable that needs no arguments. The action stays available either way.",
           "run_scope": "Narrows the run sensors and the run event entity to selected scripts and flows or to jobs this integration started. A scope change never replays older completions.",
-          "runnable_details": "One device per selected script or flow with its last run, status and duration."
+          "runnable_details": "One device per selected script or flow with its last run, status, duration and next scheduled run."
         }
       },
       "runnables": {
