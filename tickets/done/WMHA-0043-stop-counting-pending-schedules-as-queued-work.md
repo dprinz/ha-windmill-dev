@@ -90,6 +90,8 @@ Run on 2026-08-04 with `uv run python -VV` reporting CPython 3.14.6.
 | Repository guardrails | `python scripts/validate_repository.py` | pass — 43 tickets checked |
 | Tests | `uv run pytest -q --cov=custom_components.windmill --cov-fail-under=95` | 433 passed, 98% total |
 | Lint, format, types | `uv run ruff check`, `ruff format --check`, `uv run mypy custom_components/windmill` | pass |
+| CI on the pushed commit | GitHub Actions on `15deb3e` | 2026-08-04: `Tests, lint and types`, `Repository guardrails` and `Validate HACS and hassfest` all green |
+
 
 ## Review evidence
 

@@ -102,6 +102,8 @@ Run on 2026-08-04 with `uv run python -VV` reporting CPython 3.14.6.
 | Type check | `uv run mypy custom_components/windmill` | pass — 16 source files |
 | Translation key parity | recursive key-set comparison of `strings.json` against both translations | identical |
 | No new dependency | `git diff pyproject.toml uv.lock` | empty |
+| CI on the pushed commit | GitHub Actions on `15deb3e` | 2026-08-04: `Tests, lint and types`, `Repository guardrails` and `Validate HACS and hassfest` all green |
+
 
 ## Review evidence
 
