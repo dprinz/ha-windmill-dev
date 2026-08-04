@@ -5,6 +5,30 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-08-04
+
+### Fixed
+
+- Run observation is no longer reported as unsupported on a workspace that has
+  jobs. Windmill's `jobs/list` applies `per_page` only to the completed half of
+  its `queue UNION ALL completed` response and returns the entire queue on top,
+  so a single running job made the capability probe reject a perfectly healthy
+  answer. Setup then showed `Runs: unsupported`, the run entities were never
+  created and a repair issue was raised.
+- The run poll no longer fails once a workspace has a full page of completed
+  jobs and at least one running job. It applied the same wrong row bound, so
+  every refresh would have ended in a protocol error.
+- Running and queued job counts are no longer inflated on a busy workspace.
+  Windmill ignores the offset of `jobs/list`, so a later page can repeat an
+  earlier one; observed jobs are now deduplicated by ID before they are counted.
+
+### Changed
+
+- The run poll requests smaller pages (30 instead of 100 completed rows) so a
+  full page plus a plausible queue stays inside the client's response-size cap,
+  and it treats a page as short when its *completed* rows are fewer than
+  requested.
+
 ## [0.1.2] - 2026-08-03
 
 ### Changed
