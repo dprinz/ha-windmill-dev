@@ -5,6 +5,32 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- New opt-in feature `runnable_details`. Every script and flow selected under
+  **Configure → Scripts and flows** becomes its own device below the workspace
+  device, with `Last run`, `Last status`, `Last duration`, `Next run` and
+  `Running`. Unlike the workspace-wide run observation, these answer for one
+  runnable in particular, including one that last ran days ago.
+- `Next run` is read from the job Windmill reserves in its own queue for the
+  next occurrence of a schedule. The integration neither reads nor writes
+  schedules and never evaluates a cron expression; a runnable without a
+  schedule reports nothing.
+
+### Fixed
+
+- The workspace `Queued jobs` sensor no longer counts the next occurrence of
+  every enabled schedule. Windmill writes those into the queue as soon as the
+  previous run finishes, so an idle workspace reported a queue depth equal to
+  its number of schedules and never reached zero. Only jobs actually waiting
+  for a worker are counted now. If an automation depended on the old number,
+  it will see lower values.
+- The workspace device is registered during setup instead of being created as
+  a side effect of the first entity that referenced it. With every
+  workspace-level feature disabled, no entity created it at all.
+
 ## [0.1.3] - 2026-08-04
 
 ### Fixed

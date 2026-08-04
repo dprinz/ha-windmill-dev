@@ -165,6 +165,41 @@ def _fired_run_events(changes: list[Any]) -> list[Any]:
     ]
 
 
+async def test_a_reserved_schedule_slot_is_not_queued_work(hass: HomeAssistant) -> None:
+    """The next occurrence of a schedule sits in the queue but is not waiting for a worker.
+
+    Windmill writes the next run of every enabled schedule into the queue as soon as the
+    previous one finishes. Counting those would make an idle workspace report a queue depth
+    equal to its number of schedules, and that number would never drop to zero.
+    """
+    reserved = WindmillJob(
+        id="00000000-0000-4000-8000-000000000030",
+        state=JobState.QUEUED,
+        kind="script",
+        path="u/automation/lights",
+        created_at=BASE_TIME,
+        completed_at=None,
+        duration_ms=None,
+        scheduled_for=dt_util.utcnow() + timedelta(hours=1),
+    )
+    overdue = WindmillJob(
+        id="00000000-0000-4000-8000-000000000031",
+        state=JobState.QUEUED,
+        kind="script",
+        path="u/automation/lights",
+        created_at=BASE_TIME,
+        completed_at=None,
+        duration_ms=None,
+        # Its slot has passed: this one really is waiting for a free worker.
+        scheduled_for=dt_util.utcnow() - timedelta(minutes=5),
+    )
+
+    await _setup_entry(hass, jobs=(RUNNING_JOB, QUEUED_JOB, reserved, overdue))
+
+    assert hass.states.get("sensor.home_assistant_queued_jobs_workspace").state == "2"
+    assert hass.states.get("sensor.home_assistant_running_jobs_workspace").state == "1"
+
+
 async def test_run_entities_are_aggregates_only(hass: HomeAssistant) -> None:
     """Run observation adds four aggregates and one event entity, never one per job."""
     entry = await _setup_entry(hass)

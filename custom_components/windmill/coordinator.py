@@ -421,6 +421,11 @@ class WindmillRunSnapshot:
     new_events: tuple[WindmillRunEvent, ...] = ()
 
 
+def _is_reserved(job: WindmillJob) -> bool:
+    """Return whether a job is a slot Windmill reserved for a future point in time."""
+    return job.scheduled_for is not None and job.scheduled_for > dt_util.utcnow()
+
+
 def run_scope_from_options(options: Mapping[str, Any]) -> str:
     """Return the configured run scope, falling back to the safe default."""
     scope = str(options.get(OPT_RUN_SCOPE, DEFAULT_RUN_SCOPE))
@@ -515,7 +520,11 @@ class WindmillRunCoordinator(WindmillCoordinator[WindmillRunSnapshot]):
         """Aggregate the scoped window and turn unseen completions into bounded events."""
         scoped = [job for job in jobs if self._in_scope(job)]
         running = sum(1 for job in scoped if job.state is JobState.RUNNING)
-        queued = sum(1 for job in scoped if job.state is JobState.QUEUED)
+        # A reserved slot is a queued job too: Windmill writes the next occurrence of every
+        # enabled schedule into the queue as soon as the previous one finishes. Counting those
+        # would make the queue depth of an idle workspace equal its number of schedules, and it
+        # would never reach zero. Only work that is actually waiting for a worker is counted.
+        queued = sum(1 for job in scoped if job.state is JobState.QUEUED and not _is_reserved(job))
         completions = [
             (job.completed_at, job.id, job)
             for job in scoped
