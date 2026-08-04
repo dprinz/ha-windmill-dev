@@ -60,7 +60,10 @@ WORKER_UPDATE_INTERVAL = timedelta(minutes=2)
 WORKER_PAGE_SIZE = 100
 MAX_WORKER_PAGES = 5
 RUN_UPDATE_INTERVAL = timedelta(seconds=60)
-RUN_PAGE_SIZE = 100
+# One `jobs/list` page carries the requested completed rows plus the entire queue, and the
+# transport rejects a response above MAX_RESPONSE_BYTES. A modest page keeps a full window
+# plus a plausible queue well inside that cap.
+RUN_PAGE_SIZE = 30
 MAX_RUN_PAGES = 3
 MAX_SEEN_JOBS = 200
 RUN_STORAGE_VERSION = 1
@@ -443,21 +446,28 @@ class WindmillRunCoordinator(WindmillCoordinator[WindmillRunSnapshot]):
 
     async def _async_observe(self) -> WindmillRunSnapshot:
         """Walk bounded job pages, aggregate them and derive new completion events."""
-        jobs: list[WindmillJob] = []
+        # Keyed by job id: upstream ignores the offset of `jobs/list`, so a later page can
+        # repeat an earlier one. Counting a repeated job twice would inflate the aggregates.
+        seen: dict[str, WindmillJob] = {}
         try:
             for page in range(1, MAX_RUN_PAGES + 1):
                 rows = await self.client.async_list_jobs(
                     PageRequest(page=page, per_page=RUN_PAGE_SIZE)
                 )
-                jobs.extend(rows)
-                if len(rows) < RUN_PAGE_SIZE or self._reached_watermark(rows):
+                for job in rows:
+                    seen.setdefault(job.id, job)
+                # `per_page` bounds only the completed half of the response, so a short page
+                # is one with fewer completions than requested — the total row count says
+                # nothing about whether another page exists.
+                completed = sum(1 for job in rows if job.is_completed)
+                if completed < RUN_PAGE_SIZE or self._reached_watermark(rows):
                     break
         except WindmillAuthenticationError as err:
             raise ConfigEntryAuthFailed("Windmill authentication failed") from err
         except WindmillError as err:
             raise UpdateFailed("Unable to refresh Windmill runs") from err
 
-        snapshot = self._observe(jobs)
+        snapshot = self._observe(list(seen.values()))
         await self._store.async_save(self._state.as_dict())
         return snapshot
 

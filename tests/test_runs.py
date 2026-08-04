@@ -497,17 +497,40 @@ async def test_completion_without_timestamp_never_fires(hass: HomeAssistant) -> 
 
 
 async def test_page_walk_is_bounded(hass: HomeAssistant) -> None:
-    """A busy workspace is read through a bounded number of pages."""
-    full_page = tuple(_job(index + 100, JobState.RUNNING) for index in range(RUN_PAGE_SIZE))
-    await _setup_entry(hass, jobs=full_page)
+    """A busy workspace is read through a bounded number of pages.
 
-    with patched_client(jobs=full_page) as mocks:
+    Upstream ignores the offset, so every page can repeat the previous one; a job observed
+    twice must still be counted once.
+    """
+    full_page = tuple(
+        _job(index + 100, JobState.SUCCESS, completed_minutes=90) for index in range(RUN_PAGE_SIZE)
+    )
+    await _setup_entry(hass)
+
+    with patched_client(jobs=(*full_page, _job(1, JobState.RUNNING))) as mocks:
         async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=2))
         await hass.async_block_till_done()
 
     assert mocks["jobs"].await_count == MAX_RUN_PAGES
+    assert hass.states.get("sensor.home_assistant_running_jobs_workspace").state == "1"
+
+
+async def test_page_walk_ends_on_a_page_of_queued_jobs(hass: HomeAssistant) -> None:
+    """Only the completed half of a jobs/list page is paginated.
+
+    A page longer than `per_page` because the whole queue rides along must not be mistaken
+    for a full page that promises another one (WMHA-0038).
+    """
+    queue = tuple(_job(index + 300, JobState.RUNNING) for index in range(RUN_PAGE_SIZE + 5))
+    await _setup_entry(hass)
+
+    with patched_client(jobs=queue) as mocks:
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=2))
+        await hass.async_block_till_done()
+
+    assert mocks["jobs"].await_count == 1
     assert hass.states.get("sensor.home_assistant_running_jobs_workspace").state == str(
-        RUN_PAGE_SIZE * MAX_RUN_PAGES
+        RUN_PAGE_SIZE + 5
     )
 
 

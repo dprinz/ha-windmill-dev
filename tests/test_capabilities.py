@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from custom_components.windmill.api import (
+    MAX_JOB_ROWS,
     CapabilityAvailability,
     CapabilityReason,
     CapabilityStatus,
@@ -64,6 +65,7 @@ def _mock_capabilities(
     update_status: int = HTTPStatus.OK,
     workers_error: Exception | None = None,
     detailed_body: object | None = None,
+    runs_body: object | None = None,
     flows_body: object | None = None,
     update_text: str = "yes",
 ) -> None:
@@ -94,7 +96,7 @@ def _mock_capabilities(
     aioclient_mock.get(  # type: ignore[attr-defined]
         RUNS_URL,
         status=runs_status,
-        json=[] if runs_status == 200 else None,
+        json=([] if runs_body is None else runs_body) if runs_status == 200 else None,
         headers=JSON_HEADERS,
     )
     aioclient_mock.get(  # type: ignore[attr-defined]
@@ -241,6 +243,14 @@ async def test_capability_matrix_uses_safe_bounded_probes(
             CapabilityReason.UNEXPECTED_RESPONSE,
         ),
         (
+            # The queued half of the jobs/list union ignores per_page, so even a bounded
+            # probe must stay closed above the client maximum (WMHA-0038).
+            {"runs_body": [{} for _ in range(MAX_JOB_ROWS + 1)]},
+            "runs",
+            CapabilityStatus.UNSUPPORTED,
+            CapabilityReason.UNEXPECTED_RESPONSE,
+        ),
+        (
             {"update_text": "not-a-windmill-update-status"},
             "update_visibility",
             CapabilityStatus.UNSUPPORTED,
@@ -274,6 +284,38 @@ async def test_optional_failures_are_capability_local(
     assert matrix.script_execution.status is CapabilityStatus.NOT_APPLICABLE
     assert matrix.flow_execution.status is CapabilityStatus.NOT_APPLICABLE
     assert matrix.cancellation.status is CapabilityStatus.NOT_APPLICABLE
+
+
+async def test_run_probe_tolerates_the_unpaginated_queue_half(
+    hass: HomeAssistant, aioclient_mock: object
+) -> None:
+    """A running job must not turn a healthy jobs/list into an unsupported capability.
+
+    Upstream applies per_page only to the completed half of `queue UNION ALL completed`, so
+    `per_page=1` legitimately answers with one completed row plus the whole queue. Before
+    WMHA-0038 this reported `unsupported`/`unexpected_response` and disabled run observation
+    on any workspace that had a job.
+    """
+    _mock_capabilities(aioclient_mock, runs_body=[{}, {}, {}])
+    client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
+
+    matrix = await client.async_discover_capabilities()
+
+    assert matrix.runs.status is CapabilityStatus.AVAILABLE
+    assert matrix.runs.reason is CapabilityReason.PROBE_SUCCEEDED
+
+
+async def test_runnable_probes_keep_the_strict_page_bound(
+    hass: HomeAssistant, aioclient_mock: object
+) -> None:
+    """Endpoints that honour per_page keep failing closed on an over-long page."""
+    _mock_capabilities(aioclient_mock, flows_body=[{}, {}])
+    client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
+
+    matrix = await client.async_discover_capabilities()
+
+    assert matrix.flow_discovery.status is CapabilityStatus.UNSUPPORTED
+    assert matrix.runs.status is CapabilityStatus.AVAILABLE
 
 
 async def test_authenticated_probe_401_invalidates_authentication(

@@ -22,6 +22,11 @@ MAX_PAGE_SIZE = 100
 MAX_RETRY_AFTER = 300.0
 MAX_WORKSPACE_ROWS = 200
 MAX_WORKER_GROUP_ROWS = 200
+# `jobs/list` is a `queue UNION ALL completed` whose union carries no limit: `per_page` bounds
+# only the completed half, so the response also contains every queued and running top-level job.
+# The row bound must therefore be a client-side maximum, never the requested page size. The
+# transport's MAX_RESPONSE_BYTES stays the outer guarantee and rejects a larger queue first.
+MAX_JOB_ROWS = 200
 MAX_TEXT_FIELD_LENGTH = 256
 ALIVE_WORKER_SECONDS = 300
 CANCELLATION_REASON = "Canceled from Home Assistant"
@@ -1055,6 +1060,9 @@ class WindmillClient(WindmillInstanceClient):
                 self._probe_json_list(
                     f"/api/w/{workspace}/jobs/list",
                     params=runs_params,
+                    # The queued half of the union ignores `per_page`; one running job would
+                    # otherwise turn a healthy endpoint into `unsupported` (WMHA-0038).
+                    max_items=MAX_JOB_ROWS,
                 )
             ),
             asyncio.create_task(
@@ -1106,7 +1114,9 @@ class WindmillClient(WindmillInstanceClient):
             },
         )
         self._raise_for_status(response, not_found=WindmillNotFoundError)
-        return self._parse_jobs(self._decode_json(response), page.per_page)
+        # Not `page.per_page`: the queued half of the union is not paginated, so a page
+        # legitimately carries the requested completed rows plus the whole queue.
+        return self._parse_jobs(self._decode_json(response), MAX_JOB_ROWS)
 
     async def async_list_runnables(
         self, kind: RunnableKind, page: PageRequest
@@ -1246,8 +1256,13 @@ class WindmillClient(WindmillInstanceClient):
         path: str,
         *,
         params: Mapping[str, str | int],
+        max_items: int = 1,
     ) -> CapabilityAvailability:
-        """Probe a bounded list endpoint and discard every returned row."""
+        """Probe a bounded list endpoint and discard every returned row.
+
+        `max_items` defaults to the requested page size of one row. Only an endpoint that
+        does not honour `per_page` for every row it returns may raise it.
+        """
 
         async def validate() -> None:
             response = await self._async_get(
@@ -1258,7 +1273,7 @@ class WindmillClient(WindmillInstanceClient):
             )
             self._raise_for_status(response, not_found=WindmillNotFoundError)
             payload = self._decode_json(response)
-            if not isinstance(payload, list) or len(payload) > 1:
+            if not isinstance(payload, list) or len(payload) > max_items:
                 raise WindmillProtocolError("Windmill returned an invalid bounded list")
 
         return await self._probe(validate())
@@ -1367,7 +1382,11 @@ class WindmillClient(WindmillInstanceClient):
 
     @classmethod
     def _parse_jobs(cls, data: Any, limit: int) -> tuple[WindmillJob, ...]:
-        """Allowlist bounded job metadata and discard every payload field."""
+        """Allowlist bounded job metadata and discard every payload field.
+
+        The page fails closed above `limit` instead of being truncated: the union is not
+        globally ordered, so dropping rows would silently drop completions and their events.
+        """
         if not isinstance(data, list) or len(data) > limit:
             raise WindmillProtocolError("Windmill returned an invalid job list")
         return tuple(cls._parse_job(row) for row in data)

@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from custom_components.windmill.api import (
+    MAX_JOB_ROWS,
     JobState,
     PageRequest,
     RunnableKind,
@@ -802,6 +803,17 @@ QUEUED_ROW = {
 }
 
 
+def _minimal_queued_row(index: int) -> dict[str, object]:
+    """Build one small distinct queued row for page-size assertions."""
+    return {
+        "id": f"00000000-0000-4000-8000-{index:012d}",
+        "created_at": "2026-08-02T10:00:00Z",
+        "running": True,
+        "canceled": False,
+        "job_kind": "script",
+    }
+
+
 async def test_job_listing_keeps_metadata_and_drops_payloads(
     hass: HomeAssistant, aioclient_mock: object
 ) -> None:
@@ -856,7 +868,9 @@ async def test_job_state_mapping(
         [{**QUEUED_ROW, "canceled": "no"}],
         [{**COMPLETED_ROW, "success": "yes"}],
         [{**COMPLETED_ROW, "duration_ms": -1}],
-        [QUEUED_ROW, COMPLETED_ROW, QUEUED_ROW],
+        # Above the client maximum a page fails closed; it is never truncated, because the
+        # union is not globally ordered and dropping rows would drop completions.
+        [_minimal_queued_row(index) for index in range(MAX_JOB_ROWS + 1)],
     ],
 )
 async def test_job_listing_rejects_invalid_models(
@@ -868,6 +882,29 @@ async def test_job_listing_rejects_invalid_models(
 
     with pytest.raises(WindmillProtocolError):
         await client.async_list_jobs(PageRequest(page=1, per_page=2))
+
+
+async def test_job_listing_accepts_more_rows_than_the_page_size(
+    hass: HomeAssistant, aioclient_mock: object
+) -> None:
+    """A page carries the requested completed rows plus the unpaginated queue.
+
+    Upstream bounds only the completed half of `queue UNION ALL completed`, so `per_page`
+    is not a row count. Before WMHA-0038 a workspace with a full page of completions and one
+    running job failed every poll with a protocol error.
+    """
+    rows = [_minimal_queued_row(index) for index in range(5)]
+    aioclient_mock.get(  # type: ignore[attr-defined]
+        JOBS_URL,
+        json=[*rows, COMPLETED_ROW, COMPLETED_ROW],
+        headers=JSON_HEADERS,
+    )
+    client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
+
+    jobs = await client.async_list_jobs(PageRequest(page=1, per_page=2))
+
+    assert len(jobs) == 7
+    assert sum(1 for job in jobs if job.state is JobState.RUNNING) == 5
 
 
 @pytest.mark.parametrize(

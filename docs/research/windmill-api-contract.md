@@ -156,6 +156,38 @@ with deliberate overlap, deduplicates by job UUID, advances its watermark only a
 successful page sequence, and caps pages, observed IDs and retained Home Assistant-started jobs.
 This is client policy designed to tolerate concurrent inserts without unbounded scans. [OAPI]
 
+### `jobs/list` pagination is only half a page (verified 2026-08-04)
+
+`per_page` on `GET /api/w/{workspace}/jobs/list` is **not a row count**. The handler builds
+`queue UNION ALL completed`. Only the completed subquery receives `per_page`; the queued
+subquery is built with `Pagination { per_page: None, page: None }`, which
+`paginate_without_limits` resolves to `MAX_PER_PAGE = 10000`, and the union carries no outer
+`LIMIT`. A request with `per_page=N` therefore answers with up to N completed rows **plus
+every queued and running top-level job**. The union is not globally ordered either — queued
+rows precede completed rows — so a client must never truncate a page to a bound.
+
+The same handler ignores `offset`: it logs "offset is not 0, but is ignored for list_jobs" and
+hardcodes `offset 0` for the completed half, so page 2 of a walk repeats page 1. Clients must
+deduplicate by job UUID before aggregating. Setting `created_before`, `completed_before`,
+`started_before`, `success`, `status`, `label`, `result` or `is_skipped` switches the handler
+to a completed-only query that *is* bounded by `per_page` — at the price of losing the queued
+half, and with it the running/queued counts.
+
+Sources, pinned at the `v1.768.0` of the reporting instance:
+[`list_jobs` L2949-L3043](https://github.com/windmill-labs/windmill/blob/v1.768.0/backend/windmill-api/src/jobs.rs#L2949-L3043),
+[`list_queue_jobs_query` L252-L265](https://github.com/windmill-labs/windmill/blob/v1.768.0/backend/windmill-api-jobs/src/query.rs#L252-L265),
+[`paginate_without_limits` L297-L311](https://github.com/windmill-labs/windmill/blob/v1.768.0/backend/windmill-common/src/utils.rs#L297-L311).
+The same shape is present at the pinned baseline `v1.775.2`. Confidence: high (primary
+source), corroborated by a live report: a CE `v1.768.0` instance with one running job made the
+`per_page=1` capability probe report `runs: unsupported / unexpected_response` and disabled
+run observation (WMHA-0038). The `jobs/list` probe failure recorded on 2026-08-02 as a
+workspace-propagation race is at least partly explained by this instead.
+
+Consequence for the client: the row bound for every `jobs/list` read is a client-side maximum
+(`MAX_JOB_ROWS`), never the requested page size, and the transport's `MAX_RESPONSE_BYTES`
+stays the outer guarantee. A page is short when its *completed* rows are fewer than
+`per_page`.
+
 Safe job fields are `id`, union type/state, `parent_job`, `created_at`, `started_at`,
 `completed_at`, `duration_ms`, `success`, `canceled`, `script_path`, `script_hash`, `job_kind`,
 and `is_flow_step`. Discard free-form `tag` and label values by default; a later feature may map

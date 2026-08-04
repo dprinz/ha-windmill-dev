@@ -100,6 +100,11 @@ These are accepted, documented trade-offs of v1. Each links its source.
 10. **Same-millisecond completions share the event state string.** Two completions observed in
     the same millisecond produce the same event-entity state; their attributes always differ by
     `job_id`, so nothing is lost and state-trigger automations still fire for both (WMHA-0018).
+11. **A very large queue stops run observation.** Windmill's `jobs/list` returns the entire queue
+    alongside the requested completed rows, and it is not paginated. A workspace with hundreds of
+    simultaneously queued jobs exceeds the client's row and response-size bounds, so the run poll
+    fails closed and retries; the run entities become unavailable until the queue drains. Health,
+    workers and execution are unaffected (WMHA-0038).
 
 ## Evidence gaps carried into the release
 
