@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-08-04
 
 ### Added
 
@@ -30,6 +30,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The workspace device is registered during setup instead of being created as
   a side effect of the first entity that referenced it. With every
   workspace-level feature disabled, no entity created it at all.
+- A Windmill hiccup no longer deletes per-runnable devices. Pruning stale
+  devices was driven by whether the detail coordinator had been built, so a
+  runs probe that answered 503, timed out or was rate-limited during a restart
+  removed every per-runnable device — and with it those entities, their entity
+  ids, names, areas and history. Devices now follow the configuration: they
+  disappear when a runnable is deselected or the feature is switched off, never
+  because Windmill was briefly unwell.
+- A stored last status that is not a completion is discarded on restore instead
+  of reaching an enum sensor that does not offer it.
+
+### Known limitation
+
+- A job that Windmill retries is re-pushed as a single-step flow, which the
+  per-runnable entities and the `selected` run scope do not recognize as the
+  original runnable. For a selected script with a retry policy, the detail
+  entities keep showing the first failed attempt.
 
 ## [0.1.3] - 2026-08-04
 
