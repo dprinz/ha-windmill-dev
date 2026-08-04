@@ -8,6 +8,48 @@ health, worker and run monitoring as entities, and starts or cancels jobs throug
 actions. It never imports a whole workspace: only scripts and flows you select in the options are
 ever exposed.
 
+## Features
+
+**Monitor your instance**
+- Instance status (`healthy` / `degraded` / `unhealthy`), database connectivity and active worker
+  count — on by default.
+- Pending and running job counts from the detailed health endpoint, for tokens with
+  administrative access.
+- Per-worker-group alive workers and version drift, plus optional per-worker-instance sensors for
+  self-hosted operators.
+- An update entity for self-hosted instances: installed version, latest version and release notes.
+
+**Watch your runs**
+- Running and queued top-level jobs in the workspace, plus timestamps of the last successful and
+  last failed run.
+- A `Run` event entity firing `success`, `failure` and `canceled` — the natural trigger for Home
+  Assistant automations, with `job_id`, `path` and `duration_ms` as attributes.
+- Choose the observation scope: every visible job, only your selected runnables, or only jobs Home
+  Assistant started itself.
+- Optional per-runnable devices with last run, last status, last duration, next scheduled run and
+  a `Running` binary sensor — so even a script that last ran days ago still answers.
+
+**Trigger scripts and flows**
+- `windmill.run` starts a selected script or flow asynchronously and returns its job ID.
+  Arguments are validated against the runnable's input schema before any request leaves Home
+  Assistant.
+- `windmill.cancel` cancels a queued or running job that Home Assistant started.
+- Optional one-press buttons for selected runnables that need no arguments.
+- Runnables can be pinned to a script hash or flow version, or follow the latest deployment.
+
+**Built to be trustworthy**
+- Explicit allow-list: at most 25 scripts and flows you pick yourself. No workspace import, and
+  nothing runs that you did not select.
+- Least-privilege tokens, sent only in an authorization header — never in URLs, logs, entity
+  state or diagnostics, which are redacted before download.
+- Guided config flow with capability detection: it reports what your instance, edition and token
+  actually support instead of guessing. Execution is never probed during setup.
+- Missing permissions or unsupported endpoints degrade one feature and raise a self-clearing
+  repair issue; the rest of the entry keeps working.
+- Fully asynchronous polling with automatic backoff on rate limits and server errors.
+- Reauthentication and reconfiguration without deleting the entry, multiple instances and
+  workspaces side by side, English and German UI.
+
 ## Installation
 
 Requires Home Assistant 2026.7.0 or newer.
