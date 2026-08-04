@@ -5,6 +5,31 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-08-04
+
+### Changed
+
+- Reworked the English and German UI copy across setup, options, entity names,
+  actions, exceptions and repair issues (#3). Internal vocabulary gives way to
+  wording a Home Assistant user recognizes: German no longer says "Run-Beobachtung",
+  "Lebendige Worker" or "Erkannte Fähigkeiten".
+- Six entities are renamed in English, which changes the entity ids Home
+  Assistant suggests **for new installations only** — existing entity ids,
+  automations and history are untouched: `Health` → `Instance status`,
+  `Alive workers` → `Active workers`, `<group> workers` →
+  `<group> active workers`, `Running jobs (workspace)` → `Running jobs in
+  workspace`, `Queued jobs (workspace)` → `Queued jobs in workspace`, and
+  `Next run` → `Next scheduled run`. German display names change as well; German
+  never influenced entity ids.
+
+### Fixed
+
+- The English copy of #3 actually reaches users. It was written into
+  `strings.json` only, which Home Assistant never reads at runtime for a custom
+  integration — every English string is served from `translations/en.json`. The
+  repository check now compares those two files by value, not only by key, so
+  the two cannot drift apart again.
+
 ## [0.2.0] - 2026-08-04
 
 ### Added
