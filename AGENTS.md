@@ -104,6 +104,22 @@ These versions are binding. Do not infer them from the interpreter that happens 
 | Home Assistant | 2026.7.4 | `pytest-homeassistant-custom-component==0.13.348` in `pyproject.toml`; `hacs.json` declares 2026.7.0 as the minimum a user may run |
 | Windmill API | pinned baseline v1.775.2, successor checked v1.776.0 | `docs/research/windmill-api-contract.md` |
 
+### Release version consistency
+
+A release version is one coordinated value, not an isolated manifest edit. Every release preparation
+must update all of these to the same `MAJOR.MINOR.PATCH` value before a tag is created:
+
+1. `custom_components/windmill/manifest.json` → `version`
+2. `pyproject.toml` → `project.version`
+3. the newest release heading in `CHANGELOG.md`
+4. `docs/product/supported-versions-and-limitations.md` → `Current integration release`
+
+Updating only some of them is an incomplete release and must not be committed, tagged or handed over
+as ready. Update the compatibility statement itself whenever test evidence, supported versions,
+release status or known limitations changed. Run `python scripts/validate_repository.py`; version
+drift is a release blocker. The full human release procedure is in
+`docs/development/versioning-and-releases.md`.
+
 Rules:
 
 - Run every Python command through `uv run`. A bare `python` or `python3` is whatever the machine
