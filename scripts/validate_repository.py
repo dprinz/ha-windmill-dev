@@ -50,6 +50,13 @@ FRONTMATTER_RE = re.compile(r"\A---\n(?P<body>.*?)\n---\n", re.DOTALL)
 FIELD_RE = re.compile(r"^(?P<key>[a-z_]+):\s*(?P<value>.*)$", re.MULTILINE)
 LINK_RE = re.compile(r"(?<!!)\[[^]]+\]\((?P<target>[^)]+)\)")
 TICKET_NAME_RE = re.compile(r"^WMHA-\d{4}-.+\.md$")
+CHANGELOG_VERSION_RE = re.compile(
+    r"^## \[(?P<version>\d+\.\d+\.\d+)\] - \d{4}-\d{2}-\d{2}$", re.MULTILINE
+)
+COMPATIBILITY_VERSION_RE = re.compile(
+    r"^Current integration release: `(?P<version>\d+\.\d+\.\d+)`(?:\s|$)", re.MULTILINE
+)
+PROJECT_VERSION_RE = re.compile(r'^version\s*=\s*"(?P<version>\d+\.\d+\.\d+)"\s*$')
 IGNORED_MARKDOWN_DIRS = {
     ".agent-state",
     ".git",
@@ -61,6 +68,10 @@ IGNORED_MARKDOWN_DIRS = {
 
 TRANSLATION_SOURCE = ROOT / "custom_components" / "windmill" / "strings.json"
 TRANSLATION_DIR = ROOT / "custom_components" / "windmill" / "translations"
+MANIFEST_PATH = ROOT / "custom_components" / "windmill" / "manifest.json"
+PYPROJECT_PATH = ROOT / "pyproject.toml"
+CHANGELOG_PATH = ROOT / "CHANGELOG.md"
+COMPATIBILITY_PATH = ROOT / "docs" / "product" / "supported-versions-and-limitations.md"
 
 
 def flatten_keys(value: object, prefix: str = "") -> dict[str, str]:
@@ -106,6 +117,73 @@ def validate_translations(errors: list[str]) -> None:
                     f"{path.relative_to(ROOT)}: English copy differs from "
                     f"{TRANSLATION_SOURCE.name}: {key}"
                 )
+
+
+def parse_project_version(text: str) -> str | None:
+    """Read project.version without adding a TOML dependency to the foundation check."""
+    in_project = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            in_project = stripped == "[project]"
+            continue
+        if not in_project:
+            continue
+        match = PROJECT_VERSION_RE.fullmatch(stripped)
+        if match:
+            return match.group("version")
+    return None
+
+
+def validate_release_versions(errors: list[str]) -> None:
+    """Require every public release-version declaration to stay synchronized."""
+    versions: dict[str, str] = {}
+
+    try:
+        manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+        version = manifest.get("version")
+        if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+", version):
+            errors.append(f"{MANIFEST_PATH.relative_to(ROOT)}: invalid or missing version")
+        else:
+            versions["manifest"] = version
+    except (OSError, ValueError) as exc:
+        errors.append(f"cannot read {MANIFEST_PATH.relative_to(ROOT)}: {exc}")
+
+    try:
+        version = parse_project_version(PYPROJECT_PATH.read_text(encoding="utf-8"))
+        if version is None:
+            errors.append(f"{PYPROJECT_PATH.relative_to(ROOT)}: invalid or missing project.version")
+        else:
+            versions["pyproject"] = version
+    except OSError as exc:
+        errors.append(f"cannot read {PYPROJECT_PATH.relative_to(ROOT)}: {exc}")
+
+    try:
+        match = CHANGELOG_VERSION_RE.search(CHANGELOG_PATH.read_text(encoding="utf-8"))
+        if match is None:
+            errors.append(f"{CHANGELOG_PATH.relative_to(ROOT)}: no release heading found")
+        else:
+            versions["changelog"] = match.group("version")
+    except OSError as exc:
+        errors.append(f"cannot read {CHANGELOG_PATH.relative_to(ROOT)}: {exc}")
+
+    try:
+        match = COMPATIBILITY_VERSION_RE.search(
+            COMPATIBILITY_PATH.read_text(encoding="utf-8")
+        )
+        if match is None:
+            errors.append(
+                f"{COMPATIBILITY_PATH.relative_to(ROOT)}: missing "
+                "Current integration release marker"
+            )
+        else:
+            versions["compatibility"] = match.group("version")
+    except OSError as exc:
+        errors.append(f"cannot read {COMPATIBILITY_PATH.relative_to(ROOT)}: {exc}")
+
+    if len(versions) > 1 and len(set(versions.values())) != 1:
+        details = ", ".join(f"{source}={version}" for source, version in versions.items())
+        errors.append(f"release version mismatch: {details}")
 
 
 def parse_frontmatter(text: str, path: Path) -> dict[str, str]:
@@ -210,6 +288,7 @@ def main() -> int:
     validate_tickets(errors)
     validate_local_links(errors)
     validate_translations(errors)
+    validate_release_versions(errors)
 
     if errors:
         print("Repository validation failed:")
