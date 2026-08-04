@@ -1,14 +1,16 @@
-# Supported versions and known limitations (v1)
+# Supported versions and known limitations
 
-Status: release-gate statement for the first stable release, compiled for WMHA-0015 on
-2026-08-02. This page is the public compatibility statement required before release approval.
-It states only what evidence supports.
+Current integration release: `0.3.0` (public beta).
+
+Status: public compatibility statement for release 0.3.0, updated on 2026-08-04. It states only
+what the available contract checks, automated tests and live-smoke evidence support. The
+integration is ready for public testing, but its external installation base is still small.
 
 ## Supported Home Assistant versions
 
 | Home Assistant | Status | Evidence |
 | --- | --- | --- |
-| 2026.7.4 | tested | pinned test baseline (`pytest-homeassistant-custom-component==0.13.348`, Python 3.14); the full 385-test suite runs against it |
+| 2026.7.4 | tested | pinned test baseline (`pytest-homeassistant-custom-component==0.13.348`, Python 3.14); the full 435-test suite runs against it |
 | 2026.7.0 and newer 2026.7.x | supported | `hacs.json` minimum `2026.7.0` |
 | older than 2026.7.0 | untested | not claimed |
 
@@ -17,10 +19,10 @@ It states only what evidence supports.
 | Windmill | Status | Evidence |
 | --- | --- | --- |
 | Self-hosted CE `v1.775.2` | verified contract + live smoke | API contract verified line-by-line against the pinned upstream sources (`docs/research/windmill-api-contract.md`); live client-level smoke against a local disposable Docker deployment on 2026-08-02 (see below) |
-| Self-hosted CE `v1.768.0` | public probes observed | read-only probe on 2026-08-02: `/api/version` and `/api/health/status` returned 200; protected endpoints returned 401 without a token (`docs/research/windmill-api-contract.md`) |
+| Self-hosted CE `v1.768.0` | public probes and live defect reproduction | read-only probe on 2026-08-02, followed by live observation of the `jobs/list` response shape on 2026-08-04; the latter produced and verified the run-observation fix released in 0.1.3 |
 | Self-hosted EE | contract-level | same pinned source; edition differences are capability-probed at runtime; no live EE instance was available |
 | Older self-hosted versions | degraded by design | endpoints introduced after a server's version probe as `unsupported` and disable only the affected feature; no minimum version is claimed |
-| Windmill Cloud | unverified — release risk | no Cloud test tenant exists; behavior is designed from the contract (update entity `not_applicable`, instance-global health optional) but has no live coverage; re-confirmed unverifiable on 2026-08-02 (WMHA-0026) |
+| Windmill Cloud | unverified — beta risk | no Cloud test tenant exists; behavior is designed from the contract (update entity `not_applicable`, instance-global health optional) but has no live coverage; re-confirmed unverifiable on 2026-08-02 (WMHA-0026) |
 
 ### Live smoke evidence (2026-08-02, disposable local CE `v1.775.2`)
 
@@ -56,11 +58,11 @@ Observed (full output in the WMHA-0015 ticket evidence):
   `404` once; retrying moments later succeeded (upstream propagation race). The client maps this
   to a distinct typed error, so setup and actions report it cleanly.
 
-Cloud coverage is absent and is a stated release risk, not a hidden assumption.
+Cloud coverage is absent and is a stated public-beta risk, not a hidden assumption.
 
 ## Known limitations
 
-These are accepted, documented trade-offs of v1. Each links its source.
+These are accepted, documented trade-offs of the current public beta. Each links its source.
 
 1. **Cancellation events under the `home_assistant_started` scope.** When you cancel a job through
    the integration's own cancel action, no `canceled` event is emitted under that scope, because
@@ -112,7 +114,7 @@ These are accepted, documented trade-offs of v1. Each links its source.
     the first failed attempt and the successful retry stays invisible. Found by review, not by a
     live reproduction; widening the match needs live evidence first (WMHA-0044).
 
-## Evidence gaps carried into the release
+## Evidence gaps carried into the public beta
 
 Recorded honestly instead of claimed:
 
