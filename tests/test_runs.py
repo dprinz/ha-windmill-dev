@@ -196,8 +196,8 @@ async def test_a_reserved_schedule_slot_is_not_queued_work(hass: HomeAssistant) 
 
     await _setup_entry(hass, jobs=(RUNNING_JOB, QUEUED_JOB, reserved, overdue))
 
-    assert hass.states.get("sensor.home_assistant_queued_jobs_workspace").state == "2"
-    assert hass.states.get("sensor.home_assistant_running_jobs_workspace").state == "1"
+    assert hass.states.get("sensor.home_assistant_queued_jobs_in_workspace").state == "2"
+    assert hass.states.get("sensor.home_assistant_running_jobs_in_workspace").state == "1"
 
 
 async def test_run_entities_are_aggregates_only(hass: HomeAssistant) -> None:
@@ -206,8 +206,8 @@ async def test_run_entities_are_aggregates_only(hass: HomeAssistant) -> None:
     entity_registry = er.async_get(hass)
 
     assert entry.state is ConfigEntryState.LOADED
-    assert hass.states.get("sensor.home_assistant_running_jobs_workspace").state == "1"
-    assert hass.states.get("sensor.home_assistant_queued_jobs_workspace").state == "1"
+    assert hass.states.get("sensor.home_assistant_running_jobs_in_workspace").state == "1"
+    assert hass.states.get("sensor.home_assistant_queued_jobs_in_workspace").state == "1"
     entities = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
     assert len(entities) == 5
     assert not any(SUCCESS_JOB.id in registered.unique_id for registered in entities)
@@ -509,8 +509,8 @@ async def test_last_success_never_moves_backwards(hass: HomeAssistant) -> None:
         hass.states.get("sensor.home_assistant_last_successful_run").state
         == (BASE_TIME + timedelta(minutes=1)).isoformat()
     )
-    assert hass.states.get("sensor.home_assistant_running_jobs_workspace").state == "1"
-    assert hass.states.get("sensor.home_assistant_queued_jobs_workspace").state == "0"
+    assert hass.states.get("sensor.home_assistant_running_jobs_in_workspace").state == "1"
+    assert hass.states.get("sensor.home_assistant_queued_jobs_in_workspace").state == "0"
 
 
 async def test_completion_without_timestamp_never_fires(hass: HomeAssistant) -> None:
@@ -547,7 +547,7 @@ async def test_page_walk_is_bounded(hass: HomeAssistant) -> None:
         await hass.async_block_till_done()
 
     assert mocks["jobs"].await_count == MAX_RUN_PAGES
-    assert hass.states.get("sensor.home_assistant_running_jobs_workspace").state == "1"
+    assert hass.states.get("sensor.home_assistant_running_jobs_in_workspace").state == "1"
 
 
 async def test_page_walk_ends_on_a_page_of_queued_jobs(hass: HomeAssistant) -> None:
@@ -564,7 +564,7 @@ async def test_page_walk_ends_on_a_page_of_queued_jobs(hass: HomeAssistant) -> N
         await hass.async_block_till_done()
 
     assert mocks["jobs"].await_count == 1
-    assert hass.states.get("sensor.home_assistant_running_jobs_workspace").state == str(
+    assert hass.states.get("sensor.home_assistant_running_jobs_in_workspace").state == str(
         RUN_PAGE_SIZE + 5
     )
 
@@ -591,12 +591,13 @@ async def test_rate_limited_refresh_marks_entities_unavailable(hass: HomeAssista
 
     assert entry.state is ConfigEntryState.LOADED
     assert (
-        hass.states.get("sensor.home_assistant_running_jobs_workspace").state == STATE_UNAVAILABLE
+        hass.states.get("sensor.home_assistant_running_jobs_in_workspace").state
+        == STATE_UNAVAILABLE
     )
 
     await _refresh(hass, jobs=INITIAL_JOBS, minutes=4)
 
-    assert hass.states.get("sensor.home_assistant_running_jobs_workspace").state == "1"
+    assert hass.states.get("sensor.home_assistant_running_jobs_in_workspace").state == "1"
 
 
 async def test_run_authentication_failure_triggers_reauth(hass: HomeAssistant) -> None:
@@ -652,7 +653,7 @@ async def test_disabled_or_unsupported_runs_create_no_entities(
         await hass.async_block_till_done()
 
     assert entry.state is ConfigEntryState.LOADED
-    assert hass.states.get("sensor.home_assistant_running_jobs_workspace") is None
+    assert hass.states.get("sensor.home_assistant_running_jobs_in_workspace") is None
     assert hass.states.get("event.home_assistant_run") is None
 
 
@@ -697,8 +698,8 @@ async def test_selected_runnables_scope_observes_only_the_selection(
         options=SELECTED_SCOPE_OPTIONS,
     )
 
-    assert hass.states.get("sensor.home_assistant_running_jobs_workspace").state == "1"
-    assert hass.states.get("sensor.home_assistant_queued_jobs_workspace").state == "0"
+    assert hass.states.get("sensor.home_assistant_running_jobs_in_workspace").state == "1"
+    assert hass.states.get("sensor.home_assistant_queued_jobs_in_workspace").state == "0"
     # The out-of-scope completion never reaches the scoped timestamps.
     assert hass.states.get("sensor.home_assistant_last_successful_run").state == STATE_UNKNOWN
 
@@ -726,8 +727,8 @@ async def test_selected_runnables_scope_without_selection_observes_nothing(
         options={**RUN_OPTIONS, OPT_RUN_SCOPE: RUN_SCOPE_SELECTED},
     )
 
-    assert hass.states.get("sensor.home_assistant_running_jobs_workspace").state == "0"
-    assert hass.states.get("sensor.home_assistant_queued_jobs_workspace").state == "0"
+    assert hass.states.get("sensor.home_assistant_running_jobs_in_workspace").state == "0"
+    assert hass.states.get("sensor.home_assistant_queued_jobs_in_workspace").state == "0"
 
     await _refresh(hass, jobs=(*INITIAL_JOBS, CANCELED_JOB))
 
@@ -741,7 +742,7 @@ async def test_home_assistant_started_scope_observes_only_tracked_jobs(
     """The started-by-Home-Assistant scope follows the started-job registry."""
     entry = await _setup_entry(hass, jobs=(RUNNING_JOB,), options=STARTED_SCOPE_OPTIONS)
 
-    assert hass.states.get("sensor.home_assistant_running_jobs_workspace").state == "0"
+    assert hass.states.get("sensor.home_assistant_running_jobs_in_workspace").state == "0"
 
     tracked_running = _job(30, JobState.RUNNING)
     tracked_done = _job(30, JobState.SUCCESS, completed_minutes=4)
@@ -757,7 +758,7 @@ async def test_home_assistant_started_scope_observes_only_tracked_jobs(
 
     await _refresh(hass, jobs=(RUNNING_JOB, tracked_running))
 
-    assert hass.states.get("sensor.home_assistant_running_jobs_workspace").state == "1"
+    assert hass.states.get("sensor.home_assistant_running_jobs_in_workspace").state == "1"
     assert hass.states.get("event.home_assistant_run").state == STATE_UNKNOWN
 
     await _refresh(hass, jobs=(tracked_done, foreign_done), minutes=4)
@@ -788,7 +789,7 @@ async def test_scope_change_never_replays_and_rescopes_observation(
     # Nothing already observed fires again and the counters respect the new scope,
     # while the scoped last-run timestamps restart empty.
     assert hass.states.get("event.home_assistant_run").state == fired_at
-    assert hass.states.get("sensor.home_assistant_running_jobs_workspace").state == "1"
+    assert hass.states.get("sensor.home_assistant_running_jobs_in_workspace").state == "1"
     assert hass.states.get("sensor.home_assistant_last_successful_run").state == STATE_UNKNOWN
     assert hass.states.get("sensor.home_assistant_last_failed_run").state == STATE_UNKNOWN
 
@@ -815,8 +816,8 @@ async def test_unknown_scope_value_falls_back_to_all(hass: HomeAssistant) -> Non
     """A scope value this version does not know degrades to observing everything."""
     await _setup_entry(hass, options={**RUN_OPTIONS, OPT_RUN_SCOPE: "bogus"})
 
-    assert hass.states.get("sensor.home_assistant_running_jobs_workspace").state == "1"
-    assert hass.states.get("sensor.home_assistant_queued_jobs_workspace").state == "1"
+    assert hass.states.get("sensor.home_assistant_running_jobs_in_workspace").state == "1"
+    assert hass.states.get("sensor.home_assistant_queued_jobs_in_workspace").state == "1"
     assert (
         hass.states.get("sensor.home_assistant_last_successful_run").state
         == (BASE_TIME + timedelta(minutes=1)).isoformat()

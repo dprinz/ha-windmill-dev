@@ -75,7 +75,7 @@ Feature options and their defaults:
 
 | Option | Default | What it adds |
 | --- | --- | --- |
-| `instance_health` | on | Health enum sensor, database connectivity, alive worker count |
+| `instance_health` | on | Instance status enum sensor, database connectivity, active worker count |
 | `detailed_health` | off | Pending and running job counts (administrative) |
 | `worker_groups` | off | Per-group alive workers and version drift sensors (administrative) |
 | `worker_details` | off | One sensor per worker instance (high cardinality, self-hosted operators) |
@@ -114,9 +114,9 @@ Names below are the English display names; German translations are included.
 
 | Entity | Description |
 | --- | --- |
-| `Health` | Enum sensor: `healthy`, `degraded` or `unhealthy` |
+| `Instance status` | Enum sensor: `healthy`, `degraded` or `unhealthy` |
 | `Database` | Connectivity binary sensor: Windmill can reach its database |
-| `Alive workers` | Diagnostic sensor: workers that pinged recently |
+| `Active workers` | Diagnostic sensor: workers that pinged recently |
 
 ### Detailed health (`detailed_health`, opt-in, administrative)
 
@@ -131,7 +131,7 @@ One pair per worker group `<group>`:
 
 | Entity | Description |
 | --- | --- |
-| `<group> workers` | Diagnostic sensor: alive workers of the group |
+| `<group> active workers` | Diagnostic sensor: alive workers of the group |
 | `<group> worker versions` | Diagnostic sensor: distinct Windmill versions in the group; above `1` means version drift |
 
 ### Worker details (`worker_details`, opt-in, high cardinality)
@@ -144,8 +144,8 @@ One pair per worker group `<group>`:
 
 | Entity | Description |
 | --- | --- |
-| `Running jobs (workspace)` | Sensor: observed top-level jobs currently running |
-| `Queued jobs (workspace)` | Sensor: observed top-level jobs waiting to start |
+| `Running jobs in workspace` | Sensor: observed top-level jobs currently running |
+| `Queued jobs in workspace` | Sensor: observed top-level jobs waiting to start |
 | `Last successful run` | Timestamp sensor: last observed successful completion |
 | `Last failed run` | Timestamp sensor: last observed failed completion |
 | `Run` | Event entity with event types `success`, `failure` and `canceled` |
@@ -160,7 +160,7 @@ below the workspace device, carrying five entities:
 | `Last run` | Timestamp sensor: when this runnable's last run finished |
 | `Last status` | Enum sensor: `success`, `failure` or `canceled` |
 | `Last duration` | Duration sensor: how long the last run took |
-| `Next run` | Timestamp sensor: when a Windmill schedule will run this runnable next |
+| `Next scheduled run` | Timestamp sensor: when a Windmill schedule will run this runnable next |
 | `Running` | Binary sensor: whether a job of this runnable is executing right now |
 
 Unlike the workspace-wide run observation, these entities answer for one runnable in particular,
@@ -169,12 +169,12 @@ runnable every five minutes, and the shared run window that already refreshes ev
 completion normally shows up within a minute, and the exact read is what keeps a rarely used job
 from reporting nothing.
 
-`Next run` is read from the job Windmill itself reserves in its queue for the next occurrence of a
+`Next scheduled run` is read from the job Windmill itself reserves in its queue for the next occurrence of a
 schedule — the integration never reads or writes schedules, and never evaluates a cron expression.
 A runnable without a schedule reports nothing, and disabling or deleting the schedule in Windmill
 clears the value within one refresh.
 
-The last known history survives a restart. `Running` and `Next run` deliberately do not: both
+The last known history survives a restart. `Running` and `Next scheduled run` deliberately do not: both
 describe what Windmill is doing right now, and a restart is exactly when a restored value would
 start claiming a run that finished or a schedule that was turned off in the meantime.
 

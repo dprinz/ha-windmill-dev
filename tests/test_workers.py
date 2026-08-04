@@ -120,9 +120,9 @@ async def test_worker_groups_expose_bounded_counts(hass: HomeAssistant) -> None:
     entry = await _setup_entry(hass)
 
     assert entry.state is ConfigEntryState.LOADED
-    assert hass.states.get("sensor.home_assistant_default_workers").state == "2"
+    assert hass.states.get("sensor.home_assistant_default_active_workers").state == "2"
     assert hass.states.get("sensor.home_assistant_default_worker_versions").state == "1"
-    assert hass.states.get("sensor.home_assistant_gpu_workers").state == "1"
+    assert hass.states.get("sensor.home_assistant_gpu_active_workers").state == "1"
     assert hass.states.get("sensor.home_assistant_gpu_worker_versions").state == "1"
 
 
@@ -130,7 +130,7 @@ async def test_configured_group_without_workers_reports_zero(hass: HomeAssistant
     """A configured but idle group stays present with a zero count."""
     await _setup_entry(hass)
 
-    assert hass.states.get("sensor.home_assistant_reporting_workers").state == "0"
+    assert hass.states.get("sensor.home_assistant_reporting_active_workers").state == "0"
     assert hass.states.get("sensor.home_assistant_reporting_worker_versions").state == "0"
 
 
@@ -145,7 +145,7 @@ async def test_version_drift_is_counted(hass: HomeAssistant) -> None:
     await _setup_entry(hass, workers=drifted)
 
     assert hass.states.get("sensor.home_assistant_default_worker_versions").state == "2"
-    assert hass.states.get("sensor.home_assistant_default_workers").state == "3"
+    assert hass.states.get("sensor.home_assistant_default_active_workers").state == "3"
 
 
 async def test_restarted_workers_keep_stable_entities(hass: HomeAssistant) -> None:
@@ -172,7 +172,7 @@ async def test_restarted_workers_keep_stable_entities(hass: HomeAssistant) -> No
         for registered in er.async_entries_for_config_entry(entity_registry, entry.entry_id)
     }
     assert before == after
-    assert hass.states.get("sensor.home_assistant_default_workers").state == "1"
+    assert hass.states.get("sensor.home_assistant_default_active_workers").state == "1"
     assert hass.states.get("sensor.home_assistant_workers_on_host1").state == "1"
 
 
@@ -219,7 +219,7 @@ async def test_worker_details_are_disabled_by_default(hass: HomeAssistant) -> No
     """Per-instance entities require an explicit opt-in."""
     await _setup_entry(hass, options={OPT_INSTANCE_HEALTH: False, OPT_WORKER_GROUPS: True})
 
-    assert hass.states.get("sensor.home_assistant_default_workers") is not None
+    assert hass.states.get("sensor.home_assistant_default_active_workers") is not None
     assert hass.states.get("sensor.home_assistant_workers_on_host1") is None
 
 
@@ -242,8 +242,8 @@ async def test_unlistable_groups_fall_back_to_observed_groups(hass: HomeAssistan
     """A denied group listing never prevents worker monitoring."""
     await _setup_entry(hass, groups=WindmillAuthorizationError())
 
-    assert hass.states.get("sensor.home_assistant_default_workers").state == "2"
-    assert hass.states.get("sensor.home_assistant_reporting_workers") is None
+    assert hass.states.get("sensor.home_assistant_default_active_workers").state == "2"
+    assert hass.states.get("sensor.home_assistant_reporting_active_workers") is None
 
 
 async def test_unauthorized_worker_capability_creates_no_entities(hass: HomeAssistant) -> None:
@@ -251,7 +251,7 @@ async def test_unauthorized_worker_capability_creates_no_entities(hass: HomeAssi
     entry = await _setup_entry(hass, capabilities=_capabilities(workers=UNAUTHORIZED))
 
     assert entry.state is ConfigEntryState.LOADED
-    assert hass.states.get("sensor.home_assistant_default_workers") is None
+    assert hass.states.get("sensor.home_assistant_default_active_workers") is None
     assert hass.states.get("sensor.home_assistant_workers_on_host1") is None
 
 
@@ -264,7 +264,9 @@ async def test_worker_refresh_failure_marks_entities_unavailable(hass: HomeAssis
         await hass.async_block_till_done()
 
     assert entry.state is ConfigEntryState.LOADED
-    assert hass.states.get("sensor.home_assistant_default_workers").state == STATE_UNAVAILABLE
+    assert (
+        hass.states.get("sensor.home_assistant_default_active_workers").state == STATE_UNAVAILABLE
+    )
 
 
 async def test_worker_authentication_failure_triggers_reauth(hass: HomeAssistant) -> None:
@@ -312,7 +314,7 @@ async def test_full_pages_are_walked_until_the_bounded_limit(hass: HomeAssistant
         await hass.async_block_till_done()
 
     assert mocks["workers"].await_count == 5
-    assert hass.states.get("sensor.home_assistant_default_workers").state == "500"
+    assert hass.states.get("sensor.home_assistant_default_active_workers").state == "500"
 
 
 @pytest.mark.parametrize(

@@ -184,12 +184,12 @@ async def test_health_entities_expose_bounded_state(hass: HomeAssistant) -> None
     entry = await _setup_entry(hass)
 
     assert entry.state is ConfigEntryState.LOADED
-    health = hass.states.get("sensor.home_assistant_health")
+    health = hass.states.get("sensor.home_assistant_instance_status")
     assert health is not None
     assert health.state == "healthy"
     assert health.attributes["device_class"] == "enum"
     assert health.attributes["options"] == ["healthy", "degraded", "unhealthy"]
-    assert hass.states.get("sensor.home_assistant_alive_workers").state == "2"
+    assert hass.states.get("sensor.home_assistant_active_workers").state == "2"
     assert hass.states.get("sensor.home_assistant_pending_jobs").state == "3"
     assert hass.states.get("sensor.home_assistant_running_jobs").state == "1"
     assert hass.states.get("binary_sensor.home_assistant_database").state == "on"
@@ -236,7 +236,7 @@ async def test_overall_status_mapping(
         ),
     )
 
-    assert hass.states.get("sensor.home_assistant_health").state == expected
+    assert hass.states.get("sensor.home_assistant_instance_status").state == expected
     assert hass.states.get("binary_sensor.home_assistant_database").state == "off"
 
 
@@ -250,20 +250,20 @@ async def test_health_failure_marks_entities_unavailable_and_recovers(
         async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=2))
         await hass.async_block_till_done()
 
-    assert hass.states.get("sensor.home_assistant_health").state == STATE_UNAVAILABLE
+    assert hass.states.get("sensor.home_assistant_instance_status").state == STATE_UNAVAILABLE
 
     with patched_client():
         async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=4))
         await hass.async_block_till_done()
 
-    assert hass.states.get("sensor.home_assistant_health").state == "healthy"
+    assert hass.states.get("sensor.home_assistant_instance_status").state == "healthy"
 
 
 async def test_denied_detailed_health_keeps_coarse_entities(hass: HomeAssistant) -> None:
     """A denied administrative call never takes down the core health entities."""
     await _setup_entry(hass, detailed=WindmillAuthorizationError())
 
-    assert hass.states.get("sensor.home_assistant_health").state == "healthy"
+    assert hass.states.get("sensor.home_assistant_instance_status").state == "healthy"
     assert hass.states.get("sensor.home_assistant_pending_jobs").state == STATE_UNAVAILABLE
     assert hass.states.get("sensor.home_assistant_running_jobs").state == STATE_UNAVAILABLE
 
@@ -274,7 +274,7 @@ async def test_unauthorized_detailed_capability_creates_no_queue_entities(
     """Queue diagnostics require both the opt-in and a supporting capability."""
     await _setup_entry(hass, capabilities=_capabilities(detailed=UNAUTHORIZED))
 
-    assert hass.states.get("sensor.home_assistant_health") is not None
+    assert hass.states.get("sensor.home_assistant_instance_status") is not None
     assert hass.states.get("sensor.home_assistant_pending_jobs") is None
     assert hass.states.get("sensor.home_assistant_running_jobs") is None
 
@@ -283,7 +283,7 @@ async def test_detailed_health_opt_out_creates_no_queue_entities(hass: HomeAssis
     """Detailed health stays disabled unless the user opts in."""
     await _setup_entry(hass, options={})
 
-    assert hass.states.get("sensor.home_assistant_health") is not None
+    assert hass.states.get("sensor.home_assistant_instance_status") is not None
     assert hass.states.get("sensor.home_assistant_pending_jobs") is None
 
 
@@ -301,7 +301,7 @@ async def test_disabled_or_unsupported_health_creates_no_entities(
     entry = await _setup_entry(hass, options=options, capabilities=capabilities)
 
     assert entry.state is ConfigEntryState.LOADED
-    assert hass.states.get("sensor.home_assistant_health") is None
+    assert hass.states.get("sensor.home_assistant_instance_status") is None
     assert hass.states.get("binary_sensor.home_assistant_database") is None
 
 
@@ -371,7 +371,7 @@ async def test_rate_limiting_slows_polling_until_one_refresh_succeeds(
         assert mocks["health"].await_count == 1
 
     assert coordinator.update_interval == HEALTH_UPDATE_INTERVAL
-    assert hass.states.get("sensor.home_assistant_health").state == "healthy"
+    assert hass.states.get("sensor.home_assistant_instance_status").state == "healthy"
 
 
 async def test_rate_limit_backoff_is_bounded(hass: HomeAssistant) -> None:

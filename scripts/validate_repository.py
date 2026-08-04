@@ -76,7 +76,13 @@ def flatten_keys(value: object, prefix: str = "") -> dict[str, str]:
 
 
 def validate_translations(errors: list[str]) -> None:
-    """Report missing and orphaned keys of every translation file against strings.json."""
+    """Report missing and orphaned keys of every translation file against strings.json.
+
+    English is additionally compared by value. Home Assistant loads only
+    `translations/<language>.json` for a custom integration and never reads `strings.json` at
+    runtime, so English copy written into the source file alone reaches nobody. Key parity
+    cannot see that: the keys stay identical while the two files drift apart in wording.
+    """
     try:
         source = flatten_keys(json.loads(TRANSLATION_SOURCE.read_text(encoding="utf-8")))
     except (OSError, ValueError) as exc:
@@ -92,6 +98,14 @@ def validate_translations(errors: list[str]) -> None:
             errors.append(f"{path.relative_to(ROOT)}: missing translation key: {key}")
         for key in sorted(set(translation) - set(source)):
             errors.append(f"{path.relative_to(ROOT)}: orphaned translation key: {key}")
+        if path.name != "en.json":
+            continue
+        for key in sorted(set(source) & set(translation)):
+            if source[key] != translation[key]:
+                errors.append(
+                    f"{path.relative_to(ROOT)}: English copy differs from "
+                    f"{TRANSLATION_SOURCE.name}: {key}"
+                )
 
 
 def parse_frontmatter(text: str, path: Path) -> dict[str, str]:
