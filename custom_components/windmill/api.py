@@ -1118,6 +1118,32 @@ class WindmillClient(WindmillInstanceClient):
         # legitimately carries the requested completed rows plus the whole queue.
         return self._parse_jobs(self._decode_json(response), MAX_JOB_ROWS)
 
+    async def async_list_runnable_jobs(
+        self, path: str, page: PageRequest
+    ) -> tuple[WindmillJob, ...]:
+        """Return the jobs of exactly one runnable path, queued and completed alike.
+
+        `script_path_exact` matches the unified `runnable_path` column, so one parameter
+        addresses scripts and flows. It is deliberately the only filter sent besides the
+        top-level ones: adding `success`, `status`, `completed_before` or any other filter of
+        that family makes upstream answer from a completed-only query, which silently drops the
+        running and scheduled jobs this read exists to see.
+        """
+        workspace = quote(self.workspace, safe="")
+        response = await self._async_get(
+            f"/api/w/{workspace}/jobs/list",
+            authenticated=True,
+            accept="application/json",
+            params={
+                **page.as_params(),
+                "script_path_exact": normalize_runnable_path(path),
+                "has_null_parent": "true",
+                "is_flow_step": "false",
+            },
+        )
+        self._raise_for_status(response, not_found=WindmillNotFoundError)
+        return self._parse_jobs(self._decode_json(response), MAX_JOB_ROWS)
+
     async def async_list_runnables(
         self, kind: RunnableKind, page: PageRequest
     ) -> tuple[WindmillRunnable, ...]:

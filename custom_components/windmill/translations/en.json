@@ -39,7 +39,8 @@
           "run_observation": "Job and run observation",
           "update_entity": "Update availability",
           "runnable_buttons": "Buttons for parameterless runnables",
-          "run_scope": "Run observation scope"
+          "run_scope": "Run observation scope",
+          "runnable_details": "Job details per runnable"
         },
         "data_description": {
           "detailed_health": "Administrative: needs a token that Windmill accepts on the detailed health endpoint.",
@@ -47,7 +48,8 @@
           "worker_details": "High cardinality: adds one entity per worker instance and is meant for self-hosted operators.",
           "update_entity": "Self-hosted only. Managed Windmill Cloud deployments are updated by Windmill.",
           "runnable_buttons": "Optional: adds one button per selected runnable that needs no arguments. The action stays available either way.",
-          "run_scope": "Narrows the run sensors and the run event entity to selected scripts and flows or to jobs this integration started. A scope change never replays older completions."
+          "run_scope": "Narrows the run sensors and the run event entity to selected scripts and flows or to jobs this integration started. A scope change never replays older completions.",
+          "runnable_details": "One device per selected script or flow with its last run, status and duration."
         }
       },
       "reauth_confirm": {
@@ -89,6 +91,9 @@
     "binary_sensor": {
       "database": {
         "name": "Database"
+      },
+      "runnable_running": {
+        "name": "Running"
       }
     },
     "sensor": {
@@ -129,6 +134,20 @@
       },
       "last_failed_run": {
         "name": "Last failed run"
+      },
+      "runnable_last_run": {
+        "name": "Last run"
+      },
+      "runnable_last_status": {
+        "name": "Last status",
+        "state": {
+          "success": "Success",
+          "failure": "Failure",
+          "canceled": "Canceled"
+        }
+      },
+      "runnable_last_duration": {
+        "name": "Last duration"
       }
     },
     "event": {
@@ -176,7 +195,8 @@
           "run_observation": "Job and run observation",
           "update_entity": "Update availability",
           "runnable_buttons": "Buttons for parameterless runnables",
-          "run_scope": "Run observation scope"
+          "run_scope": "Run observation scope",
+          "runnable_details": "Job details per runnable"
         },
         "data_description": {
           "detailed_health": "Administrative: needs a token that Windmill accepts on the detailed health endpoint.",
@@ -184,7 +204,8 @@
           "worker_details": "High cardinality: adds one entity per worker instance and is meant for self-hosted operators.",
           "update_entity": "Self-hosted only. Managed Windmill Cloud deployments are updated by Windmill.",
           "runnable_buttons": "Optional: adds one button per selected runnable that needs no arguments. The action stays available either way.",
-          "run_scope": "Narrows the run sensors and the run event entity to selected scripts and flows or to jobs this integration started. A scope change never replays older completions."
+          "run_scope": "Narrows the run sensors and the run event entity to selected scripts and flows or to jobs this integration started. A scope change never replays older completions.",
+          "runnable_details": "One device per selected script or flow with its last run, status and duration."
         }
       },
       "runnables": {

@@ -70,6 +70,7 @@ async def async_get_config_entry_diagnostics(
                     ("workers", runtime.worker_coordinator),
                     ("runs", runtime.run_coordinator),
                     ("runnables", runtime.runnable_coordinator),
+                    ("runnable_runs", runtime.runnable_run_coordinator),
                     ("update", runtime.update_coordinator),
                 )
             },

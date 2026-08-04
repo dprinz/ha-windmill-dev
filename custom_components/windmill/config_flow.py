@@ -56,6 +56,7 @@ from .const import (
     OPT_INSTANCE_HEALTH,
     OPT_RUN_OBSERVATION,
     OPT_RUN_SCOPE,
+    OPT_RUNNABLE_DETAILS,
     OPT_RUNNABLES,
     OPT_UPDATE_ENTITY,
     OPT_WORKER_DETAILS,
@@ -133,15 +134,24 @@ def _feature_capabilities(capabilities: CapabilityMatrix) -> dict[str, Capabilit
         OPT_DETAILED_HEALTH: capabilities.detailed_health,
         OPT_WORKER_DETAILS: capabilities.workers,
         OPT_RUN_OBSERVATION: capabilities.runs,
+        OPT_RUNNABLE_DETAILS: capabilities.runs,
         OPT_UPDATE_ENTITY: capabilities.update_visibility,
     }
 
 
 def _feature_defaults(capabilities: CapabilityMatrix) -> dict[str, bool]:
-    """Enable a feature by default only when it is safe and currently supported."""
+    """Enable a feature by default only when it is safe and currently supported.
+
+    Not every feature has a single gating capability — a runnable button needs script *or* flow
+    execution — so an unmapped feature keeps its default instead of being suppressed. Writing
+    that out explicitly matters: the previous form indexed the map directly and survived only
+    because `and` short-circuits on a false default, which would turn the first default flipped
+    to true into a `KeyError`.
+    """
     supported = _feature_capabilities(capabilities)
     return {
-        key: FEATURE_DEFAULTS[key] and supported[key].status is CapabilityStatus.AVAILABLE
+        key: FEATURE_DEFAULTS[key]
+        and (key not in supported or supported[key].status is CapabilityStatus.AVAILABLE)
         for key in FEATURE_OPTIONS
     }
 

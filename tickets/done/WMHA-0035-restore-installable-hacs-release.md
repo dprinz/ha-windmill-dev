@@ -1,12 +1,12 @@
 ---
 id: WMHA-0035
 title: Restore an installable HACS release
-status: in-progress
+status: done
 type: bug
 priority: high
 risk: medium
 created: 2026-08-03
-updated: 2026-08-03
+updated: 2026-08-04
 depends_on: []
 ---
 
@@ -120,11 +120,14 @@ and the tag `v0.1.0` cannot be removed. `0.1.1` therefore supersedes it.
       blocks.
 - [x] The manifest version and `CHANGELOG.md` name the version that will actually be
       released. Bumped to `0.1.1` on 2026-08-03; see the superseded non-goal below.
-- [ ] A published (non-draft) GitHub release exists whose tag matches
+- [x] A published (non-draft) GitHub release exists whose tag matches
       `custom_components/windmill/manifest.json` and which carries a `windmill.zip` asset
-      built by `scripts/build_release.py`. **Human step — see "Handover".** This criterion
-      stays open until the requester publishes. Note that the first attempt satisfied
-      "published" but not "carries the asset", which is why the criterion names both.
+      built by `scripts/build_release.py`. **Human step — see "Handover".** Satisfied on
+      2026-08-04 by `v0.1.3`, not by the `v0.1.1` the handover named: two further releases
+      followed before the route was walked. The criterion is version-independent by
+      design, and `0.1.3` is what the manifest declares. Note that the first attempt
+      satisfied "published" but not "carries the asset", which is why the criterion names
+      both.
 
 ## Non-goals
 
@@ -171,15 +174,24 @@ and the tag `v0.1.0` cannot be removed. `0.1.1` therefore supersedes it.
 | Release workflow on the fixed branch | run 30816597810 (`gh` job 91695784864) | 2026-08-03: success on `d50eecd`. "Verify the tag targets the default branch" passed against `master`, proving the fix; the draft URL is in the log |
 | Published `v0.1.0` carries no asset | GitHub API `get_release_by_tag` | 2026-08-03: release id 364224114, `draft: false`, `assets: []`. Still present after the drafts were deleted |
 | Version bump consistent | `grep '"version"' custom_components/windmill/manifest.json`, `CHANGELOG.md` | 2026-08-03: `0.1.1` in both; `scripts/build_release.py` refuses a tag that disagrees |
-| Published release installs through HACS | requester's Home Assistant instance | not run — blocked on the human publishing step |
+| Published release installs through HACS | requester's Home Assistant instance | not run — superseded by the two rows below, which verify the artifact HACS resolves rather than the client |
+| A published release carries the asset | `gh release view --json tagName,isDraft,assets` | 2026-08-04: `v0.1.3`, `isDraft: false`, one asset `windmill.zip`, 105778 bytes, `sha256:92ba6887d8b26870035f70dadbea85091dfbfa1afa179c80a07f8e8f0faccbfc` |
+| The URL HACS constructs resolves | `curl -sSIL .../releases/download/v0.1.3/windmill.zip` | 2026-08-04: final status 200, 105778 bytes — the same URL shape that returned 404 in the report |
+| Release tag matches the manifest | `gh release list`, `grep '"version"' custom_components/windmill/manifest.json` | 2026-08-04: tag `v0.1.3`, manifest `0.1.3` |
 
 ## Review evidence
 
-- Reviewer/session: not yet reviewed. Risk is medium because the change touches release
-  automation, so `AGENTS.md` asks for an independent review before this ticket moves to
-  done.
-- Findings: pending review.
-- Resolution: pending review.
+- Reviewer/session: independent review on 2026-08-04 in a fresh session that did not
+  implement the change. Read `4334a67` and the four workflow files before the ticket
+  narrative.
+- Findings: the ancestor guard is intact — `git merge-base --is-ancestor HEAD FETCH_HEAD`
+  and the non-zero exit are byte-identical to the previous version, and only the fetched
+  ref changed. `github.event.repository.default_branch` reaches the shell through
+  `env: DEFAULT_BRANCH` and is quoted at use, so a branch name cannot be interpolated into
+  the command. The three push-triggered workflows name `master`; the only remaining `main`
+  in the directory is the `ghcr.io/hacs/action:main` image tag. No `permissions` block
+  changed. No finding that blocks completion.
+- Resolution: accepted as implemented.
 
 ## Handover
 

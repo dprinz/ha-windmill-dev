@@ -148,6 +148,30 @@ One pair per worker group `<group>`:
 | `Last failed run` | Timestamp sensor: last observed failed completion |
 | `Run` | Event entity with event types `success`, `failure` and `canceled` |
 
+### Job details per runnable (`runnable_details`, opt-in)
+
+Every script and flow you selected under **Configure → Scripts and flows** becomes its own device
+below the workspace device, carrying four entities:
+
+| Entity | Description |
+| --- | --- |
+| `Last run` | Timestamp sensor: when this runnable's last run finished |
+| `Last status` | Enum sensor: `success`, `failure` or `canceled` |
+| `Last duration` | Duration sensor: how long the last run took |
+| `Running` | Binary sensor: whether a job of this runnable is executing right now |
+
+Unlike the workspace-wide run observation, these entities answer for one runnable in particular,
+including one that last ran days ago. They are filled from two sources: one request per selected
+runnable every five minutes, and the shared run window that already refreshes every minute — so a
+completion normally shows up within a minute, and the exact read is what keeps a rarely used job
+from reporting nothing.
+
+The last known values survive a restart. `Running` deliberately does not: a job that was executing
+before a restart is not necessarily executing after one, so the sensor starts off until the next
+observation.
+
+Deselecting a runnable removes its device, its entities and its stored history on the next reload.
+
 ### Runnable buttons (`runnable_buttons`, opt-in)
 
 One `Run <path>` button per selected runnable that needs no arguments. Pressing a button starts

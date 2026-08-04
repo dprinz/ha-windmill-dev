@@ -18,6 +18,7 @@ OPT_RUN_OBSERVATION = "run_observation"
 OPT_UPDATE_ENTITY = "update_entity"
 OPT_RUNNABLES = "runnables"
 OPT_RUNNABLE_BUTTONS = "runnable_buttons"
+OPT_RUNNABLE_DETAILS = "runnable_details"
 OPT_RUN_SCOPE = "run_scope"
 
 RUN_SCOPE_ALL = "all"
@@ -53,6 +54,7 @@ FEATURE_OPTIONS = (
     OPT_RUN_OBSERVATION,
     OPT_UPDATE_ENTITY,
     OPT_RUNNABLE_BUTTONS,
+    OPT_RUNNABLE_DETAILS,
 )
 
 # Administrative and high-cardinality features stay disabled until a user opts in.
@@ -64,4 +66,5 @@ FEATURE_DEFAULTS = {
     OPT_RUN_OBSERVATION: True,
     OPT_UPDATE_ENTITY: False,
     OPT_RUNNABLE_BUTTONS: False,
+    OPT_RUNNABLE_DETAILS: False,
 }

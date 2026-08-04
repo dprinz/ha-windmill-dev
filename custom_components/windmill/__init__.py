@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
@@ -11,6 +12,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import (
@@ -38,6 +40,7 @@ from .const import (
     OPT_DETAILED_HEALTH,
     OPT_INSTANCE_HEALTH,
     OPT_RUN_OBSERVATION,
+    OPT_RUNNABLE_DETAILS,
     OPT_RUNNABLES,
     OPT_UPDATE_ENTITY,
     OPT_WORKER_DETAILS,
@@ -45,19 +48,24 @@ from .const import (
 )
 from .coordinator import (
     ENTRY_STORES,
+    RunnableSelection,
     RunObservationState,
     StartedJobRegistry,
     WindmillCapabilityCoordinator,
     WindmillHealthCoordinator,
     WindmillRunCoordinator,
     WindmillRunnableCoordinator,
+    WindmillRunnableRunCoordinator,
     WindmillUpdateCoordinator,
     WindmillWorkerCoordinator,
     async_job_store,
     async_run_store,
+    async_runnable_run_store,
+    load_runnable_run_states,
     load_selections,
     run_scope_from_options,
 )
+from .entity import build_device_info
 from .issues import async_delete_issues, async_evaluate_issues
 from .models import WindmillRuntimeData
 from .services import async_register_services
@@ -142,6 +150,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: WindmillConfigEntry) -> 
 
     selections = load_selections(entry.options.get(OPT_RUNNABLES))
 
+    # Built before the run coordinator so the shared window can be handed to it from the very
+    # first poll instead of only from the second one.
+    runnable_run_coordinator: WindmillRunnableRunCoordinator | None = None
+    if (
+        selections
+        and _feature_enabled(entry, OPT_RUNNABLE_DETAILS)
+        and _supported(capabilities.runs)
+    ):
+        detail_store = async_runnable_run_store(hass, entry.entry_id)
+        runnable_run_coordinator = WindmillRunnableRunCoordinator(
+            hass,
+            entry,
+            client,
+            detail_store,
+            selections,
+            load_runnable_run_states(await detail_store.async_load()),
+        )
+        await runnable_run_coordinator.async_config_entry_first_refresh()
+
     run_coordinator: WindmillRunCoordinator | None = None
     if _feature_enabled(entry, OPT_RUN_OBSERVATION) and _supported(capabilities.runs):
         store = async_run_store(hass, entry.entry_id)
@@ -157,6 +184,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WindmillConfigEntry) -> 
             scope=scope,
             selected=frozenset(selection.key for selection in selections),
             started_jobs=started_jobs,
+            job_sink=(
+                None
+                if runnable_run_coordinator is None
+                else runnable_run_coordinator.async_apply_window
+            ),
         )
         await run_coordinator.async_config_entry_first_refresh()
 
@@ -185,8 +217,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: WindmillConfigEntry) -> 
         worker_coordinator=worker_coordinator,
         run_coordinator=run_coordinator,
         runnable_coordinator=runnable_coordinator,
+        runnable_run_coordinator=runnable_run_coordinator,
         started_jobs=started_jobs,
         update_coordinator=update_coordinator,
+    )
+    # The workspace device is registered here rather than left to whichever entity happens to
+    # reference it first: a per-runnable device points at it with `via_device`, and with every
+    # workspace-level feature turned off no entity would create it at all.
+    dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        **build_device_info(entry.entry_id, entry.title, entry.runtime_data),
+    )
+    _async_prune_runnable_devices(
+        hass, entry, () if runnable_run_coordinator is None else selections
     )
     drift_since: dict[str, datetime] = {}
 
@@ -228,6 +271,28 @@ async def async_remove_entry(hass: HomeAssistant, entry: WindmillConfigEntry) ->
                 "Could not delete stored Windmill data of the removed config entry; "
                 "the leftover file is only read by an entry with the same identifier"
             )
+
+
+@callback
+def _async_prune_runnable_devices(
+    hass: HomeAssistant, entry: WindmillConfigEntry, selections: Sequence[RunnableSelection]
+) -> None:
+    """Remove the devices of runnables the user no longer exposes.
+
+    A platform that stops adding an entity does not remove it: the registry keeps it as an
+    orphan until Home Assistant is restarted, so a deselected runnable would leave a device
+    full of permanently unavailable entities behind. Entity existence follows configuration
+    here (ADR-0002), so the stale devices are dropped on the reload that changed it.
+    """
+    registry = dr.async_get(hass)
+    expected = {(DOMAIN, entry.entry_id)} | {
+        (DOMAIN, f"{entry.entry_id}_{selection.kind.value}_{selection.path}")
+        for selection in selections
+    }
+    for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
+        if device.identifiers & expected:
+            continue
+        registry.async_update_device(device.id, remove_config_entry_id=entry.entry_id)
 
 
 def _feature_enabled(entry: WindmillConfigEntry, option: str) -> bool:

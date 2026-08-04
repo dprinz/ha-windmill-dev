@@ -39,7 +39,8 @@
           "run_observation": "Job- und Run-Beobachtung",
           "update_entity": "Update-Verfügbarkeit",
           "runnable_buttons": "Schaltflächen für parameterlose Runnables",
-          "run_scope": "Beobachtungsumfang für Runs"
+          "run_scope": "Beobachtungsumfang für Runs",
+          "runnable_details": "Job-Details je Runnable"
         },
         "data_description": {
           "detailed_health": "Administrativ: benötigt ein Token, das Windmill auf dem detaillierten Health-Endpunkt akzeptiert.",
@@ -47,7 +48,8 @@
           "worker_details": "Hohe Kardinalität: fügt eine Entität pro Worker-Instanz hinzu und ist für Betreiber selbst gehosteter Instanzen gedacht.",
           "update_entity": "Nur für Self-Hosting. Verwaltete Windmill-Cloud-Deployments werden von Windmill aktualisiert.",
           "runnable_buttons": "Optional: fügt pro ausgewähltem Runnable ohne Argumente eine Schaltfläche hinzu. Die Aktion bleibt in jedem Fall verfügbar.",
-          "run_scope": "Schränkt die Run-Sensoren und die Run-Ereignisentität auf ausgewählte Skripte und Flows oder auf von dieser Integration gestartete Jobs ein. Ein Wechsel des Umfangs wiederholt keine älteren Abschlüsse."
+          "run_scope": "Schränkt die Run-Sensoren und die Run-Ereignisentität auf ausgewählte Skripte und Flows oder auf von dieser Integration gestartete Jobs ein. Ein Wechsel des Umfangs wiederholt keine älteren Abschlüsse.",
+          "runnable_details": "Ein Gerät je ausgewähltem Skript oder Flow mit letztem Lauf, Status und Dauer."
         }
       },
       "reauth_confirm": {
@@ -89,6 +91,9 @@
     "binary_sensor": {
       "database": {
         "name": "Datenbank"
+      },
+      "runnable_running": {
+        "name": "Läuft"
       }
     },
     "sensor": {
@@ -129,6 +134,20 @@
       },
       "last_failed_run": {
         "name": "Letzter fehlgeschlagener Run"
+      },
+      "runnable_last_run": {
+        "name": "Letzter Lauf"
+      },
+      "runnable_last_status": {
+        "name": "Letzter Status",
+        "state": {
+          "success": "Erfolgreich",
+          "failure": "Fehlgeschlagen",
+          "canceled": "Abgebrochen"
+        }
+      },
+      "runnable_last_duration": {
+        "name": "Letzte Dauer"
       }
     },
     "event": {
@@ -176,7 +195,8 @@
           "run_observation": "Job- und Run-Beobachtung",
           "update_entity": "Update-Verfügbarkeit",
           "runnable_buttons": "Schaltflächen für parameterlose Runnables",
-          "run_scope": "Beobachtungsumfang für Runs"
+          "run_scope": "Beobachtungsumfang für Runs",
+          "runnable_details": "Job-Details je Runnable"
         },
         "data_description": {
           "detailed_health": "Administrativ: benötigt ein Token, das Windmill auf dem detaillierten Health-Endpunkt akzeptiert.",
@@ -184,7 +204,8 @@
           "worker_details": "Hohe Kardinalität: fügt eine Entität pro Worker-Instanz hinzu und ist für Betreiber selbst gehosteter Instanzen gedacht.",
           "update_entity": "Nur für Self-Hosting. Verwaltete Windmill-Cloud-Deployments werden von Windmill aktualisiert.",
           "runnable_buttons": "Optional: fügt pro ausgewähltem Runnable ohne Argumente eine Schaltfläche hinzu. Die Aktion bleibt in jedem Fall verfügbar.",
-          "run_scope": "Schränkt die Run-Sensoren und die Run-Ereignisentität auf ausgewählte Skripte und Flows oder auf von dieser Integration gestartete Jobs ein. Ein Wechsel des Umfangs wiederholt keine älteren Abschlüsse."
+          "run_scope": "Schränkt die Run-Sensoren und die Run-Ereignisentität auf ausgewählte Skripte und Flows oder auf von dieser Integration gestartete Jobs ein. Ein Wechsel des Umfangs wiederholt keine älteren Abschlüsse.",
+          "runnable_details": "Ein Gerät je ausgewähltem Skript oder Flow mit letztem Lauf, Status und Dauer."
         }
       },
       "runnables": {

@@ -40,6 +40,12 @@ Version-sensitive implementation claims must be traced to primary sources. Re-ch
 | Windmill v1.776.0 release | https://github.com/windmill-labs/windmill/releases/tag/v1.776.0 | 2026-08-02 | sole successor of pinned v1.775.2; changelog spot check (WMHA-0029) |
 | Windmill API v1.776.0 OpenAPI | https://github.com/windmill-labs/windmill/blob/v1.776.0/backend/windmill-api/openapi.yaml | 2026-08-02 | successor SSE inventory (10 occurrences, unchanged 3 families), webhook/signature search, path diff (WMHA-0029) |
 | Windmill GitHub releases API | https://api.github.com/repos/windmill-labs/windmill/releases | 2026-08-02 | complete set of releases after the pin (WMHA-0029) |
+| Windmill v1.775.2 job query builder | https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-api-jobs/src/query.rs | 2026-08-04 | path/step/parent filter rendering on both halves of the job union (WMHA-0040) |
+| Windmill v1.775.2 job types | https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-api-jobs/src/types.rs | 2026-08-04 | `ListCompletedQuery` parameters, `UnifiedJob` and the union's selected columns (WMHA-0040) |
+| Windmill v1.775.2 negated filters | https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-api-jobs/src/negated_filter.rs | 2026-08-04 | comma-separated and `!`-negated list filter syntax (WMHA-0040) |
+| Windmill v1.775.2 queue schedule | https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-queue/src/schedule.rs | 2026-08-04 | next occurrence materialized as a queued job; clearing on disable/edit/delete (WMHA-0040) |
+| Windmill v1.775.2 schedule handlers | https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-api-schedule/src/lib.rs | 2026-08-04 | schedule routes, `ScheduleLight` fields and the absent next-occurrence field (WMHA-0040) |
+| Windmill v1.775.2 common utils | https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-common/src/utils.rs | 2026-08-04 | `paginate` versus `paginate_without_limits` (WMHA-0038, WMHA-0040) |
 
 ## Research note requirements
 

@@ -1,12 +1,12 @@
 ---
 id: WMHA-0036
 title: Allow plain HTTP base URLs with a visible transport warning
-status: in-progress
+status: done
 type: feature
 priority: high
 risk: medium
 created: 2026-08-03
-updated: 2026-08-03
+updated: 2026-08-04
 depends_on: []
 ---
 
@@ -113,13 +113,31 @@ Run on 2026-08-03 with `uv run python -VV` reporting CPython 3.14.6.
 | Translation key parity | Recursive key-set comparison of `strings.json` against `translations/en.json` and `translations/de.json` | identical in both |
 | Reported symptom | `normalize_base_url("http://windmill.home.arpa:8000/")` | returns `http://windmill.home.arpa:8000`; covered by `tests/test_api.py::test_normalize_base_url` |
 
+Re-run on 2026-08-04 in the review session, after `WMHA-0037` removed the time-dependent
+failure recorded above:
+
+| Check | Command or inspection | Result |
+| --- | --- | --- |
+| Tests and coverage | `uv run pytest -q --cov=custom_components.windmill --cov-report=term-missing --cov-fail-under=95` | 406 passed, 0 failed, 97.30% total coverage; `issues.py` at 100% |
+| Lint, format, types | `uv run ruff check`, `uv run ruff format --check`, `uv run mypy custom_components/windmill` | all pass; 31 files formatted, 16 source files clean |
+
 ## Review evidence
 
-- Reviewer/session: not yet performed. This is medium-risk work that deliberately relaxes an
-  input-validation rule, so `AGENTS.md` requires an independent review in a fresh session
-  before this ticket may move to `done/`.
-- Findings:
-- Resolution:
+- Reviewer/session: independent review on 2026-08-04 in a fresh session that did not
+  implement the change. Read the ticket and the `0371425` diff before the implementer's
+  narrative.
+- Findings: the relaxation is exactly one deleted rule in `normalize_base_url` — the
+  `scheme == "http" and not _is_loopback(host)` rejection. Every other structural rule
+  (scheme allowlist, host requirement, credential and query rejection, path normalization)
+  is untouched, and no TLS or certificate handling is involved anywhere in the diff, so
+  HTTPS connections keep verifying. The compensating control is real and correctly scoped:
+  `is_insecure_transport` reproduces the deleted predicate, `_async_insecure_transport_issue`
+  runs on every issue evaluation, and it deletes the issue when the condition stops holding
+  rather than leaving it stale. The placeholder carries `urlsplit(base_url).hostname` only —
+  no token, no path, no query — which matches the constraint. Loopback stays exempt in both
+  the warning and the reasoning. No finding that blocks completion.
+- Resolution: accepted as implemented. The advisory-not-enforcing nature of the warning is
+  the recorded human decision, not a review finding.
 
 ## Residual risks and follow-up
 
@@ -140,7 +158,8 @@ Run on 2026-08-03 with `uv run python -VV` reporting CPython 3.14.6.
   against real wall-clock time. Every fixture job is now older than the TTL, so the registry
   is empty and the assertion reports `0 == 50`. The production pruning is behaving correctly;
   the test is time-dependent and rots as the clock advances. It needs `freezegun` like the
-  other time-sensitive tests. This requires its own ticket.
+  other time-sensitive tests. This requires its own ticket. **Closed** by `WMHA-0037`
+  (`6cc2468`); the suite is green as of 2026-08-04.
 - Also still open from WMHA-0035: `.python-version` resolving to a pre-release interpreter.
   It did not reproduce in this session — `uv run python -VV` reported CPython 3.14.6.
 

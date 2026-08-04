@@ -5,17 +5,27 @@ from __future__ import annotations
 from datetime import datetime
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
-from homeassistant.const import EntityCategory
+from homeassistant.const import EntityCategory, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import WindmillConfigEntry
-from .api import WindmillHealthState
+from .api import JobState, WindmillHealthState
 from .const import FEATURE_DEFAULTS, OPT_WORKER_DETAILS, OPT_WORKER_GROUPS
-from .entity import WindmillHealthEntity, WindmillRunEntity, WindmillWorkerEntity
+from .entity import (
+    WindmillHealthEntity,
+    WindmillRunEntity,
+    WindmillRunnableRunEntity,
+    WindmillWorkerEntity,
+)
 from .models import WindmillRuntimeData
 
 HEALTH_STATES = [state.value for state in WindmillHealthState]
+# A "last status" is by definition the outcome of a finished run, so the enum omits the two
+# states a job passes through on its way there.
+COMPLETION_STATES = [
+    state.value for state in (JobState.SUCCESS, JobState.FAILURE, JobState.CANCELED)
+]
 
 
 async def async_setup_entry(
@@ -29,6 +39,7 @@ async def async_setup_entry(
     entities.extend(_health_sensors(entry, runtime))
     entities.extend(_worker_sensors(entry, runtime))
     entities.extend(_run_sensors(entry, runtime))
+    entities.extend(_runnable_run_sensors(entry, runtime))
     async_add_entities(entities)
 
 
@@ -88,6 +99,24 @@ def _run_sensors(entry: WindmillConfigEntry, runtime: WindmillRuntimeData) -> li
         WindmillQueuedRunsSensor(coordinator, entry.entry_id, entry.title, runtime),
         WindmillLastSuccessSensor(coordinator, entry.entry_id, entry.title, runtime),
         WindmillLastFailureSensor(coordinator, entry.entry_id, entry.title, runtime),
+    ]
+
+
+def _runnable_run_sensors(
+    entry: WindmillConfigEntry, runtime: WindmillRuntimeData
+) -> list[SensorEntity]:
+    """Build the per-runnable detail sensors of every explicitly selected runnable."""
+    coordinator = runtime.runnable_run_coordinator
+    if coordinator is None:
+        return []
+    return [
+        sensor(coordinator, entry.entry_id, runtime, selection)
+        for selection in coordinator.selections
+        for sensor in (
+            WindmillRunnableLastRunSensor,
+            WindmillRunnableLastStatusSensor,
+            WindmillRunnableLastDurationSensor,
+        )
     ]
 
 
@@ -245,3 +274,45 @@ class WindmillLastFailureSensor(WindmillRunEntity, SensorEntity):
     def native_value(self) -> datetime | None:
         """Return the monotonic last failed completion timestamp."""
         return self.coordinator.data.last_failure
+
+
+class WindmillRunnableLastRunSensor(WindmillRunnableRunEntity, SensorEntity):
+    """Report when one selected runnable last finished a run."""
+
+    _key = "runnable_last_run"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    @property
+    def native_value(self) -> datetime | None:
+        """Return the completion timestamp of this runnable's last run."""
+        return self.state_of_runs.last_run
+
+
+class WindmillRunnableLastStatusSensor(WindmillRunnableRunEntity, SensorEntity):
+    """Report how one selected runnable's last run ended."""
+
+    _key = "runnable_last_status"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = COMPLETION_STATES
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the outcome of the last run, or nothing before one was observed."""
+        state = self.state_of_runs.last_state
+        return None if state is None else state.value
+
+
+class WindmillRunnableLastDurationSensor(WindmillRunnableRunEntity, SensorEntity):
+    """Report how long one selected runnable's last run took."""
+
+    _key = "runnable_last_duration"
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
+    _attr_suggested_display_precision = 1
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the last run's duration in seconds; Windmill reports milliseconds."""
+        duration = self.state_of_runs.last_duration_ms
+        return None if duration is None else duration / 1000

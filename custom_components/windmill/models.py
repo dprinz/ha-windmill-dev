@@ -15,6 +15,7 @@ from .coordinator import (
     WindmillHealthCoordinator,
     WindmillRunCoordinator,
     WindmillRunnableCoordinator,
+    WindmillRunnableRunCoordinator,
     WindmillUpdateCoordinator,
     WindmillWorkerCoordinator,
 )
@@ -31,6 +32,7 @@ class WindmillRuntimeData:
     worker_coordinator: WindmillWorkerCoordinator | None = None
     run_coordinator: WindmillRunCoordinator | None = None
     runnable_coordinator: WindmillRunnableCoordinator | None = None
+    runnable_run_coordinator: WindmillRunnableRunCoordinator | None = None
     started_jobs: StartedJobRegistry | None = None
     update_coordinator: WindmillUpdateCoordinator | None = None
 

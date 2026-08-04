@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import deque
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -68,7 +68,14 @@ MAX_RUN_PAGES = 3
 MAX_SEEN_JOBS = 200
 RUN_STORAGE_VERSION = 1
 JOB_STORAGE_VERSION = 1
+RUNNABLE_RUN_STORAGE_VERSION = 1
 RUNNABLE_UPDATE_INTERVAL = timedelta(minutes=30)
+# One exact read per selected runnable, so the interval is deliberately slower than the shared
+# window: that window already delivers a completion within the minute it is observed.
+RUNNABLE_RUN_UPDATE_INTERVAL = timedelta(minutes=5)
+# The queued half of the response is scoped to a single path, so a small page is enough: only
+# the completions are bounded by it, and one completion is all a "last run" needs.
+RUNNABLE_RUN_PAGE_SIZE = 5
 RUNNABLE_PAGE_SIZE = 100
 MAX_RUNNABLE_PAGES = 3
 UPDATE_CHECK_INTERVAL = timedelta(hours=6)
@@ -84,10 +91,16 @@ def async_job_store(hass: HomeAssistant, entry_id: str) -> Store[dict[str, Any]]
     return Store(hass, JOB_STORAGE_VERSION, f"{DOMAIN}.jobs.{entry_id}")
 
 
+def async_runnable_run_store(hass: HomeAssistant, entry_id: str) -> Store[dict[str, Any]]:
+    """Return the per-runnable run-detail store of one config entry."""
+    return Store(hass, RUNNABLE_RUN_STORAGE_VERSION, f"{DOMAIN}.runnable_runs.{entry_id}")
+
+
 # Every per-entry store is built through this tuple, so entry removal cannot forget one.
 ENTRY_STORES: tuple[Callable[[HomeAssistant, str], Store[dict[str, Any]]], ...] = (
     async_run_store,
     async_job_store,
+    async_runnable_run_store,
 )
 
 
@@ -428,6 +441,7 @@ class WindmillRunCoordinator(WindmillCoordinator[WindmillRunSnapshot]):
         scope: str,
         selected: frozenset[tuple[str, str]],
         started_jobs: StartedJobRegistry,
+        job_sink: Callable[[tuple[WindmillJob, ...]], Awaitable[None]] | None = None,
     ) -> None:
         """Initialize the config-entry-owned run coordinator."""
         super().__init__(
@@ -443,6 +457,9 @@ class WindmillRunCoordinator(WindmillCoordinator[WindmillRunSnapshot]):
         self._scope = scope
         self._selected = selected
         self._started_jobs = started_jobs
+        # The observation scope is a retention decision for the aggregate sensors, not a filter
+        # on what was seen, so the sink receives the whole deduplicated window.
+        self._job_sink = job_sink
 
     async def _async_observe(self) -> WindmillRunSnapshot:
         """Walk bounded job pages, aggregate them and derive new completion events."""
@@ -467,8 +484,11 @@ class WindmillRunCoordinator(WindmillCoordinator[WindmillRunSnapshot]):
         except WindmillError as err:
             raise UpdateFailed("Unable to refresh Windmill runs") from err
 
-        snapshot = self._observe(list(seen.values()))
+        observed = tuple(seen.values())
+        snapshot = self._observe(list(observed))
         await self._store.async_save(self._state.as_dict())
+        if self._job_sink is not None:
+            await self._job_sink(observed)
         return snapshot
 
     def _reached_watermark(self, rows: tuple[WindmillJob, ...]) -> bool:
@@ -631,6 +651,178 @@ class WindmillRunnableCoordinator(WindmillCoordinator[Mapping[tuple[str, str], R
                 details,
             )
         return resolved
+
+
+@dataclass(frozen=True, slots=True)
+class RunnableRunState:
+    """What is currently known about the runs of one selected runnable."""
+
+    last_run: datetime | None = None
+    last_state: JobState | None = None
+    last_duration_ms: int | None = None
+    running: bool = False
+
+    def with_observation(self, jobs: Sequence[WindmillJob]) -> RunnableRunState:
+        """Return this state advanced by one observation of a single runnable's jobs.
+
+        The completion only ever moves forward. Both tiers hand their rows to this method, and
+        the slow one may well be answering with a window the fast one has already overtaken.
+        """
+        running = any(job.state is JobState.RUNNING for job in jobs)
+        completions = [
+            (job.completed_at, job.id, job)
+            for job in jobs
+            if job.is_completed and job.completed_at is not None
+        ]
+        if not completions:
+            return replace(self, running=running)
+        completed_at, _, latest = max(completions, key=lambda entry: (entry[0], entry[1]))
+        if self.last_run is not None and completed_at <= self.last_run:
+            return replace(self, running=running)
+        return RunnableRunState(
+            last_run=completed_at,
+            last_state=latest.state,
+            last_duration_ms=latest.duration_ms,
+            running=running,
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the JSON-serializable part of this state.
+
+        `running` is deliberately absent: it is true only while a worker is executing, so a
+        restored value would claim a run that a restart cannot have survived.
+        """
+        return {
+            "last_run": _isoformat(self.last_run),
+            "last_state": None if self.last_state is None else self.last_state.value,
+            "last_duration_ms": self.last_duration_ms,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> RunnableRunState:
+        """Restore one stored state, discarding anything unreadable."""
+        if not isinstance(data, dict):
+            return cls()
+        raw_state = data.get("last_state")
+        try:
+            last_state = None if raw_state is None else JobState(str(raw_state))
+        except ValueError:
+            last_state = None
+        duration = data.get("last_duration_ms")
+        return cls(
+            last_run=_parse_stored_timestamp(data.get("last_run")),
+            last_state=last_state,
+            last_duration_ms=duration if isinstance(duration, int) else None,
+        )
+
+
+type RunnableRunStates = Mapping[tuple[str, str], RunnableRunState]
+
+
+class WindmillRunnableRunCoordinator(WindmillCoordinator[RunnableRunStates]):
+    """Observe the run history of each selected runnable in two tiers.
+
+    The slow tier asks Windmill for exactly one runnable's jobs, which is the only way to learn
+    about a job that last ran long enough ago to have fallen out of the shared window. The fast
+    tier is that shared window: `WindmillRunCoordinator` hands over every row it parsed, so a
+    completion becomes visible in the minute it happens rather than at the next slow refresh.
+    """
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry[Any],
+        client: WindmillClient,
+        store: Store[dict[str, Any]],
+        selections: tuple[RunnableSelection, ...],
+        restored: Mapping[tuple[str, str], RunnableRunState],
+    ) -> None:
+        """Initialize the config-entry-owned run-detail coordinator."""
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=f"{DOMAIN} runnable runs",
+            config_entry=entry,
+            update_interval=RUNNABLE_RUN_UPDATE_INTERVAL,
+        )
+        self.client = client
+        self.selections = selections
+        self._store = store
+        # A removed selection must not keep its record alive, so the restored state is
+        # projected onto the current selection instead of being merged with it.
+        self._states: dict[tuple[str, str], RunnableRunState] = {
+            selection.key: restored.get(selection.key, RunnableRunState())
+            for selection in selections
+        }
+        self.data = dict(self._states)
+
+    async def _async_observe(self) -> Mapping[tuple[str, str], RunnableRunState]:
+        """Read one exact job window per selected runnable."""
+        for selection in self.selections:
+            try:
+                jobs = await self.client.async_list_runnable_jobs(
+                    selection.path, PageRequest(page=1, per_page=RUNNABLE_RUN_PAGE_SIZE)
+                )
+            except WindmillAuthenticationError as err:
+                raise ConfigEntryAuthFailed("Windmill authentication failed") from err
+            except WindmillError as err:
+                raise UpdateFailed("Unable to refresh Windmill runnable runs") from err
+            self._states[selection.key] = self._states[selection.key].with_observation(
+                [job for job in jobs if (job.kind, job.path) == selection.key]
+            )
+        await self._async_save()
+        return dict(self._states)
+
+    async def async_apply_window(self, jobs: tuple[WindmillJob, ...]) -> None:
+        """Fold the shared run window into the per-runnable states.
+
+        This deliberately does not call `async_set_updated_data`: that would reschedule the
+        next refresh, and a window arriving every minute would push the exact read past its
+        interval forever. Listeners are notified directly instead.
+        """
+        by_key: dict[tuple[str, str], list[WindmillJob]] = {key: [] for key in self._states}
+        for job in jobs:
+            if job.path is None:
+                continue
+            rows = by_key.get((job.kind, job.path))
+            if rows is not None:
+                rows.append(job)
+        changed = False
+        for key, rows in by_key.items():
+            advanced = self._states[key].with_observation(rows)
+            if advanced != self._states[key]:
+                self._states[key] = advanced
+                changed = True
+        if not changed:
+            return
+        self.data = dict(self._states)
+        self.async_update_listeners()
+        await self._async_save()
+
+    async def _async_save(self) -> None:
+        """Persist the bounded per-runnable state."""
+        await self._store.async_save(
+            {"runnables": {_state_key(key): state.as_dict() for key, state in self._states.items()}}
+        )
+
+
+def _state_key(key: tuple[str, str]) -> str:
+    """Return the storage key of one selection identity."""
+    return f"{key[0]}:{key[1]}"
+
+
+def load_runnable_run_states(raw: Any) -> Mapping[tuple[str, str], RunnableRunState]:
+    """Read the stored per-runnable states, discarding unreadable entries."""
+    rows = raw.get("runnables") if isinstance(raw, dict) else None
+    if not isinstance(rows, dict):
+        return {}
+    restored: dict[tuple[str, str], RunnableRunState] = {}
+    for stored_key, value in rows.items():
+        kind, separator, path = str(stored_key).partition(":")
+        if not separator:
+            continue
+        restored[(kind, path)] = RunnableRunState.from_dict(value)
+    return restored
 
 
 async def async_discover_runnables(client: WindmillClient) -> tuple[WindmillRunnable, ...]:

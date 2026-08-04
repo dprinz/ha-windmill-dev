@@ -195,6 +195,121 @@ an explicitly configured allowlist to internal identifiers. Never retain or expo
 `raw_code`, `raw_flow`, `flow_status`, `email`, `permissioned_as`, cancellation free text,
 worker/IP identifiers or arbitrary error/stack content.
 
+### Per-runnable history: a path filter that keeps the union (verified 2026-08-04)
+
+Reading the history of **one** named runnable does not need a different endpoint. `list_jobs`
+switches to its completed-only branch when `success`, `status`, `label`, `result`,
+`is_skipped`, `resolved=true`, `created_before`, `started_before`,
+`created_or_started_before` or `completed_before` is set. `script_path_exact` is **not** in
+that list, so `GET /api/w/{workspace}/jobs/list?script_path_exact={path}` keeps the
+`queue UNION ALL completed` shape: every queued and running job of that path, plus the
+`per_page` most recent completions of that path.
+
+That matters because the completed half of the union carries `completed_at` while the
+dedicated completed listing does not — see the field note below. One request per path
+therefore answers last run, last status, last duration, running-now and next run at once,
+through the endpoint and parser the integration already has.
+
+`script_path_exact` is a `NegatedListFilter<String>`: a comma-separated list whose first item
+may carry a `!` prefix to negate the whole list. It renders as `runnable_path IN (…)` on both
+halves of the union, and `runnable_path` is the unified column, so the same parameter
+addresses scripts and flows without a kind discriminator. Several paths may share one request,
+at the price of a `per_page` bound that is then shared across all of them: the response is the
+N most recent completions *across* the listed paths, not N per path. A busy path can therefore
+crowd out a quiet one, which makes the multi-path form useful for refreshing and unsuitable for
+backfilling.
+
+`has_null_parent=true` and `is_flow_step=false` apply to both halves and keep the read
+top-level, exactly as in the unscoped listing.
+
+The dedicated `GET /api/w/{workspace}/jobs/completed/list` behaves differently in two ways
+that are easy to get wrong:
+
+- It honours **both** `per_page` and `offset`, because `list_completed_jobs` uses `paginate`
+  rather than the union's `paginate_without_limits`. Unlike `jobs/list`, paging it works.
+- Its explicit column list does **not** include `completed_at`. It selects `created_at`,
+  `started_at` and `duration_ms`, so a completion timestamp can only be reconstructed as
+  `started_at + duration_ms`. `completed_at` is present on `jobs/list` (via `UnifiedJob`) and
+  on `jobs_u/get/{id}`, not here.
+
+Recommendation, confidence high: use `jobs/list` with `script_path_exact` for per-runnable
+observation. Use one request per path when a value must be exact, and the multi-path form only
+as a cheap refresh. `jobs/completed/list` remains the right tool only when a caller genuinely
+needs to page deep into history, which this integration does not.
+
+Sources, pinned at `v1.775.2`:
+[`list_jobs` branch condition L3790-L3826](https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-api/src/jobs.rs#L3790-L3826),
+[`list_completed_jobs` L9869-L9938](https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-api/src/jobs.rs#L9869-L9938),
+[`ListCompletedQuery` L129-L177](https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-api-jobs/src/types.rs#L129-L177),
+[`UnifiedJob` and `CJ_FIELDS`/`QJ_FIELDS` L271-L380](https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-api-jobs/src/types.rs#L271-L380),
+[path filter rendering L76-L104](https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-api-jobs/src/query.rs#L76-L104),
+[`NegatedListFilter` L69-L120](https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-api-jobs/src/negated_filter.rs#L69-L120),
+[`paginate` L297-L305](https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-common/src/utils.rs#L297-L305).
+
+### The next scheduled run is already a queued job (verified 2026-08-04)
+
+Windmill does not expose a computed next-occurrence field, and it does not need to: it
+materializes the next occurrence as a real row in the queue.
+
+`push_scheduled_job` parses the schedule's cron in its timezone, computes `find_next`, and
+inserts a queued job carrying `scheduled_for = next`, `trigger_kind = 'schedule'`,
+`trigger = {schedule path}`, `runnable_path = {schedule's script_path}` and
+`parent_job IS NULL`. It runs when a schedule is created, when it is edited, when it is
+enabled, and again after each execution. The insert is guarded by an existence check on
+exactly that `(workspace, schedule, scheduled_for, runnable_path)` tuple, so at most one
+pending occurrence exists per schedule.
+
+The inverse holds too. `clear_schedule` deletes the pending, not-yet-running scheduled jobs of
+a schedule, and it is called from `edit_schedule`, `set_enabled` and `delete_schedule`. A
+disabled or deleted schedule therefore stops having a pending row, and an edited one has its
+row replaced.
+
+`scheduled_for` is part of `QJ_FIELDS`, so it is already present on the rows this integration
+receives from `jobs/list`; the completed half selects `null as scheduled_for`. A future
+scheduled run is exactly a queued row whose `running` is false and whose `scheduled_for` lies
+in the future.
+
+Recommendation, confidence high: derive next run from the queued half of a
+`script_path_exact`-filtered `jobs/list`. This needs no schedules endpoint, no additional
+token scope, no capability probe and no cron-evaluation dependency.
+
+The schedules API was inspected and deliberately **not** adopted.
+`GET /api/w/{workspace}/schedules/list` returns `ScheduleLight` rows carrying `path`,
+`schedule` (the raw cron string), `timezone`, `enabled`, `script_path`, `is_flow`, `summary`,
+`edited_by`, `edited_at`, `extra_perms` and label fields. There is **no** next-occurrence
+field, so using it for next run would require evaluating cron expressions with timezone and
+DST semantics inside Home Assistant — a new runtime dependency, to reproduce a computation the
+server has already performed and stored. `list_with_jobs` exists but returns
+`jobs: Option<Vec<serde_json::Value>>`, an unmodeled JSON array, which is the opposite of a
+bounded projection.
+
+Consequence for job-state classification: a pending scheduled job is a `QueuedJob` and is
+counted as queued by any client that only checks `running`. A workspace with ten enabled
+schedules therefore shows a permanent queue depth of ten unless `scheduled_for` is compared
+against the current time.
+
+Sources, pinned at `v1.775.2`:
+[`push_scheduled_job` L126-L215](https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-queue/src/schedule.rs#L126-L215),
+[`clear_schedule` L749-L790](https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-queue/src/schedule.rs#L749-L790),
+[schedule routes and `set_enabled` L88-L100, L1040-L1155](https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-api-schedule/src/lib.rs#L88-L100),
+[`ScheduleLight` L708-L735](https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-api-schedule/src/lib.rs#L708-L735),
+[`ScheduleWJobs` L923-L935](https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-api-schedule/src/lib.rs#L923-L935),
+[`QJ_FIELDS` L356-L380](https://github.com/windmill-labs/windmill/blob/v1.775.2/backend/windmill-api-jobs/src/types.rs#L356-L380).
+
+### Field classification for per-runnable observation
+
+`script_path_exact`-filtered rows are the same `Job` union as before, so the existing safe-field
+allowlist applies unchanged. Two fields are newly consumed and both are safe:
+
+| Field | Classification | Reason |
+| --- | --- | --- |
+| `scheduled_for` | safe | A timestamp the user's own schedule produced; carries no payload |
+| `schedule_path` | safe but unused | A workspace path like `script_path`; not needed once `scheduled_for` answers next run |
+
+Everything the filtered read additionally returns — `permissioned_as`, `email`, `canceled_by`,
+`canceled_reason`, `tag`, `labels`, `mem_peak`, `worker`, `args` — stays denied. `args` is
+`null` unless `include_args=true` is sent, which this integration never does.
+
 ## Runnable discovery, addressing and execution
 
 | Kind | Discover/list | Read metadata | Async execute | Address semantics |

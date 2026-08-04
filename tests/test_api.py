@@ -834,6 +834,39 @@ async def test_job_listing_keeps_metadata_and_drops_payloads(
     assert "must-not-be-retained" not in repr(jobs)
 
 
+async def test_per_runnable_listing_sends_only_the_union_preserving_filter(
+    hass: HomeAssistant, aioclient_mock: object
+) -> None:
+    """The per-runnable read filters by exact path and keeps the queued half of the union.
+
+    The asserted URL is the contract: any of `success`, `status`, `completed_before` and their
+    relatives would make upstream answer from a completed-only query, which silently drops the
+    running and scheduled jobs this read exists to observe (WMHA-0040).
+    """
+    url = (
+        f"{BASE_URL}/api/w/{WORKSPACE}/jobs/list?page=1&per_page=5"
+        "&script_path_exact=f/example/night&has_null_parent=true&is_flow_step=false"
+    )
+    aioclient_mock.get(url, json=[COMPLETED_ROW], headers=JSON_HEADERS)  # type: ignore[attr-defined]
+    client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
+
+    jobs = await client.async_list_runnable_jobs("f/example/night", PageRequest(page=1, per_page=5))
+
+    assert [job.path for job in jobs] == ["f/example/night"]
+    assert "must-not-be-retained" not in repr(jobs)
+    sent = aioclient_mock.mock_calls[0][1].query  # type: ignore[attr-defined]
+    assert "success" not in sent
+    assert "completed_before" not in sent
+
+
+async def test_per_runnable_listing_rejects_an_unsafe_path(hass: HomeAssistant) -> None:
+    """A path that is not a valid runnable path never reaches the network."""
+    client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
+
+    with pytest.raises(WindmillRequestError):
+        await client.async_list_runnable_jobs("../etc", PageRequest(page=1, per_page=5))
+
+
 @pytest.mark.parametrize(
     ("row", "expected"),
     [
