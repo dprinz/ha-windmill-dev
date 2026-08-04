@@ -268,6 +268,10 @@ class WindmillJob:
     created_at: datetime
     completed_at: datetime | None
     duration_ms: int | None
+    # Windmill writes the next occurrence of a schedule into the queue as a real job, so a
+    # queued row with a future `scheduled_for` is that schedule's next run. Completed rows
+    # never carry one: the completed half of the union selects it as null.
+    scheduled_for: datetime | None = None
 
     @property
     def is_completed(self) -> bool:
@@ -1463,6 +1467,7 @@ class WindmillClient(WindmillInstanceClient):
         running = row.get("running")
         if not isinstance(running, bool):
             raise WindmillProtocolError("Windmill returned an invalid job")
+        raw_scheduled = row.get("scheduled_for")
         return WindmillJob(
             id=str(identifier),
             state=JobState.RUNNING if running else JobState.QUEUED,
@@ -1471,6 +1476,9 @@ class WindmillClient(WindmillInstanceClient):
             created_at=created_at,
             completed_at=None,
             duration_ms=None,
+            scheduled_for=(
+                None if raw_scheduled is None else cls._parse_timestamp(raw_scheduled, "job")
+            ),
         )
 
     @staticmethod

@@ -661,36 +661,44 @@ class RunnableRunState:
     last_state: JobState | None = None
     last_duration_ms: int | None = None
     running: bool = False
+    next_run: datetime | None = None
 
     def with_observation(self, jobs: Sequence[WindmillJob]) -> RunnableRunState:
         """Return this state advanced by one observation of a single runnable's jobs.
 
         The completion only ever moves forward. Both tiers hand their rows to this method, and
         the slow one may well be answering with a window the fast one has already overtaken.
+
+        The running state and the next run are the opposite: they are re-derived from every
+        observation, never carried over. A schedule that was disabled has to stop being
+        announced, and it stops by its queued row disappearing.
         """
         running = any(job.state is JobState.RUNNING for job in jobs)
+        next_run = _earliest_scheduled(jobs)
         completions = [
             (job.completed_at, job.id, job)
             for job in jobs
             if job.is_completed and job.completed_at is not None
         ]
         if not completions:
-            return replace(self, running=running)
+            return replace(self, running=running, next_run=next_run)
         completed_at, _, latest = max(completions, key=lambda entry: (entry[0], entry[1]))
         if self.last_run is not None and completed_at <= self.last_run:
-            return replace(self, running=running)
+            return replace(self, running=running, next_run=next_run)
         return RunnableRunState(
             last_run=completed_at,
             last_state=latest.state,
             last_duration_ms=latest.duration_ms,
             running=running,
+            next_run=next_run,
         )
 
     def as_dict(self) -> dict[str, Any]:
         """Return the JSON-serializable part of this state.
 
-        `running` is deliberately absent: it is true only while a worker is executing, so a
-        restored value would claim a run that a restart cannot have survived.
+        `running` and `next_run` are deliberately absent: both describe what Windmill is doing
+        right now, and a restart is exactly the moment when a restored value would start lying
+        about a job that finished or a schedule that was turned off in the meantime.
         """
         return {
             "last_run": _isoformat(self.last_run),
@@ -804,6 +812,24 @@ class WindmillRunnableRunCoordinator(WindmillCoordinator[RunnableRunStates]):
         await self._store.async_save(
             {"runnables": {_state_key(key): state.as_dict() for key, state in self._states.items()}}
         )
+
+
+def _earliest_scheduled(jobs: Sequence[WindmillJob]) -> datetime | None:
+    """Return when this runnable is due to run next, if Windmill has reserved a slot.
+
+    Only a queued row counts: a running job carries the time it was scheduled for, which is in
+    the past by definition. A queued row whose slot has already passed is a job waiting for a
+    free worker, not a future run.
+    """
+    now = dt_util.utcnow()
+    upcoming = [
+        job.scheduled_for
+        for job in jobs
+        if job.state is JobState.QUEUED
+        and job.scheduled_for is not None
+        and job.scheduled_for > now
+    ]
+    return min(upcoming) if upcoming else None
 
 
 def _state_key(key: tuple[str, str]) -> str:

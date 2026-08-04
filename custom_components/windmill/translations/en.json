@@ -148,6 +148,9 @@
       },
       "runnable_last_duration": {
         "name": "Last duration"
+      },
+      "runnable_next_run": {
+        "name": "Next run"
       }
     },
     "event": {

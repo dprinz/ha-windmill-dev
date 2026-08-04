@@ -551,3 +551,138 @@ def test_unreadable_stored_state_is_discarded() -> None:
     assert restored[("script", LIGHTS_PATH)].last_state is None
     assert restored[("script", LIGHTS_PATH)].last_duration_ms is None
     assert restored[("flow", NIGHT_PATH)] == RunnableRunState()
+
+
+def _in(delta: timedelta) -> datetime:
+    """Return a whole-second timestamp relative to now; states carry no microseconds."""
+    return dt_util.utcnow().replace(microsecond=0) + delta
+
+
+def _scheduled(job_id: str, path: str, kind: str, scheduled_for: datetime) -> WindmillJob:
+    """Build one queued job that Windmill reserved for a future point in time."""
+    return WindmillJob(
+        id=job_id,
+        state=JobState.QUEUED,
+        kind=kind,
+        path=path,
+        created_at=TODAY,
+        completed_at=None,
+        duration_ms=None,
+        scheduled_for=scheduled_for,
+    )
+
+
+async def test_a_scheduled_runnable_reports_its_next_run(hass: HomeAssistant) -> None:
+    """The queued job Windmill reserved for a schedule is the next run."""
+    due = _in(timedelta(hours=2))
+    entry, _ = await _setup_entry(
+        hass, runnable_jobs={LIGHTS_PATH: (_scheduled("o", LIGHTS_PATH, "script", due),)}
+    )
+
+    assert _state(hass, entry.entry_id, "sensor", "runnable_next_run", LIGHTS_PATH).state == (
+        due.isoformat()
+    )
+
+
+async def test_an_unscheduled_runnable_reports_no_next_run(hass: HomeAssistant) -> None:
+    """A runnable without a schedule reports nothing while its history keeps working."""
+    entry, _ = await _setup_entry(
+        hass,
+        runnable_jobs={
+            LIGHTS_PATH: (_completed("p", LIGHTS_PATH, "script", JobState.SUCCESS, YESTERDAY),)
+        },
+    )
+
+    assert (
+        _state(hass, entry.entry_id, "sensor", "runnable_next_run", LIGHTS_PATH).state == "unknown"
+    )
+    assert (
+        _state(hass, entry.entry_id, "sensor", "runnable_last_status", LIGHTS_PATH).state
+        == "success"
+    )
+
+
+async def test_the_earliest_of_several_reservations_wins(hass: HomeAssistant) -> None:
+    """Where more than one slot is pending, the nearest one is the next run."""
+    soon = _in(timedelta(minutes=30))
+    later = _in(timedelta(hours=6))
+    entry, _ = await _setup_entry(
+        hass,
+        runnable_jobs={
+            LIGHTS_PATH: (
+                _scheduled("q", LIGHTS_PATH, "script", later),
+                _scheduled("r", LIGHTS_PATH, "script", soon),
+            )
+        },
+    )
+
+    assert _state(hass, entry.entry_id, "sensor", "runnable_next_run", LIGHTS_PATH).state == (
+        soon.isoformat()
+    )
+
+
+async def test_a_job_waiting_for_a_worker_is_not_a_next_run(hass: HomeAssistant) -> None:
+    """A queued job whose slot has passed is backlog, not a future run."""
+    overdue = _in(-timedelta(minutes=5))
+    entry, _ = await _setup_entry(
+        hass,
+        runnable_jobs={
+            LIGHTS_PATH: (
+                _scheduled("s", LIGHTS_PATH, "script", overdue),
+                # A running job carries the slot it was started for, also in the past.
+                _running("t", LIGHTS_PATH, "script"),
+            )
+        },
+    )
+
+    assert (
+        _state(hass, entry.entry_id, "sensor", "runnable_next_run", LIGHTS_PATH).state == "unknown"
+    )
+
+
+async def test_a_disabled_schedule_clears_the_next_run(hass: HomeAssistant) -> None:
+    """Windmill deletes the reserved job when a schedule is disabled, and the sensor follows."""
+    due = _in(timedelta(hours=1))
+    reserved: dict[str, tuple[WindmillJob, ...]] = {
+        LIGHTS_PATH: (_scheduled("u", LIGHTS_PATH, "script", due),)
+    }
+    entry, _ = await _setup_entry(hass, runnable_jobs=reserved)
+    assert _state(hass, entry.entry_id, "sensor", "runnable_next_run", LIGHTS_PATH).state == (
+        due.isoformat()
+    )
+
+    # The schedule is turned off in Windmill: `clear_schedule` removes the pending row.
+    with patched_client(runnable_jobs={}):
+        async_fire_time_changed(hass, dt_util.utcnow() + RUNNABLE_RUN_UPDATE_INTERVAL)
+        await hass.async_block_till_done()
+
+    assert (
+        _state(hass, entry.entry_id, "sensor", "runnable_next_run", LIGHTS_PATH).state == "unknown"
+    )
+
+
+async def test_a_restart_never_announces_a_stale_next_run(hass: HomeAssistant) -> None:
+    """The reserved slot is not persisted: it may be gone by the time Home Assistant returns."""
+    due = _in(timedelta(hours=3))
+    entry, _ = await _setup_entry(
+        hass,
+        runnable_jobs={
+            LIGHTS_PATH: (
+                _scheduled("v", LIGHTS_PATH, "script", due),
+                _completed("w", LIGHTS_PATH, "script", JobState.SUCCESS, YESTERDAY),
+            )
+        },
+    )
+
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    await _setup_entry(hass, runnable_jobs={}, entry=entry)
+
+    assert (
+        _state(hass, entry.entry_id, "sensor", "runnable_next_run", LIGHTS_PATH).state == "unknown"
+    )
+    # The history did survive; only the volatile half was dropped.
+    assert (
+        _state(hass, entry.entry_id, "sensor", "runnable_last_status", LIGHTS_PATH).state
+        == "success"
+    )

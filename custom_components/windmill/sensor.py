@@ -116,6 +116,7 @@ def _runnable_run_sensors(
             WindmillRunnableLastRunSensor,
             WindmillRunnableLastStatusSensor,
             WindmillRunnableLastDurationSensor,
+            WindmillRunnableNextRunSensor,
         )
     ]
 
@@ -286,6 +287,18 @@ class WindmillRunnableLastRunSensor(WindmillRunnableRunEntity, SensorEntity):
     def native_value(self) -> datetime | None:
         """Return the completion timestamp of this runnable's last run."""
         return self.state_of_runs.last_run
+
+
+class WindmillRunnableNextRunSensor(WindmillRunnableRunEntity, SensorEntity):
+    """Report when one selected runnable is scheduled to run next."""
+
+    _key = "runnable_next_run"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    @property
+    def native_value(self) -> datetime | None:
+        """Return the reserved slot of the next run, or nothing without a schedule."""
+        return self.state_of_runs.next_run
 
 
 class WindmillRunnableLastStatusSensor(WindmillRunnableRunEntity, SensorEntity):

@@ -867,6 +867,41 @@ async def test_per_runnable_listing_rejects_an_unsafe_path(hass: HomeAssistant) 
         await client.async_list_runnable_jobs("../etc", PageRequest(page=1, per_page=5))
 
 
+async def test_a_queued_job_keeps_its_reserved_slot(
+    hass: HomeAssistant, aioclient_mock: object
+) -> None:
+    """A queued row carries `scheduled_for`; a completed row never does."""
+    aioclient_mock.get(  # type: ignore[attr-defined]
+        JOBS_URL,
+        json=[
+            {**QUEUED_ROW, "running": False, "scheduled_for": "2026-08-02T11:00:00Z"},
+            {**COMPLETED_ROW, "scheduled_for": None},
+        ],
+        headers=JSON_HEADERS,
+    )
+    client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
+
+    jobs = await client.async_list_jobs(PageRequest(page=1, per_page=2))
+
+    assert jobs[0].scheduled_for == datetime(2026, 8, 2, 11, 0, tzinfo=UTC)
+    assert jobs[1].scheduled_for is None
+
+
+async def test_an_unreadable_reserved_slot_fails_closed(
+    hass: HomeAssistant, aioclient_mock: object
+) -> None:
+    """A `scheduled_for` that is not a timestamp is a contract violation, not a None."""
+    aioclient_mock.get(  # type: ignore[attr-defined]
+        JOBS_URL,
+        json=[{**QUEUED_ROW, "scheduled_for": "not-a-time"}],
+        headers=JSON_HEADERS,
+    )
+    client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
+
+    with pytest.raises(WindmillProtocolError):
+        await client.async_list_jobs(PageRequest(page=1, per_page=2))
+
+
 @pytest.mark.parametrize(
     ("row", "expected"),
     [

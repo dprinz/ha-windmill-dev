@@ -82,6 +82,7 @@ Feature options and their defaults:
 | `run_observation` | on | Workspace run counts, last-run timestamps and the run event entity |
 | `update_entity` | off | Update entity for self-hosted instances |
 | `runnable_buttons` | off | One button per selected parameterless runnable |
+| `runnable_details` | off | One device per selected runnable with its last run, status, duration and next run |
 
 The features step also offers the run observation scope (`run_scope`, default `all`). It decides
 which top-level jobs the run sensors and the run event entity cover: `all` keeps every visible
@@ -105,8 +106,9 @@ config entry without deleting it.
 
 ## Entities
 
-All entities belong to one service device per config entry. Names below are the English display
-names; German translations are included.
+Entities belong to one service device per config entry. The only exception is
+`runnable_details`, which gives every selected script and flow its own device below that one.
+Names below are the English display names; German translations are included.
 
 ### Instance health (`instance_health`, on by default)
 
@@ -158,6 +160,7 @@ below the workspace device, carrying four entities:
 | `Last run` | Timestamp sensor: when this runnable's last run finished |
 | `Last status` | Enum sensor: `success`, `failure` or `canceled` |
 | `Last duration` | Duration sensor: how long the last run took |
+| `Next run` | Timestamp sensor: when a Windmill schedule will run this runnable next |
 | `Running` | Binary sensor: whether a job of this runnable is executing right now |
 
 Unlike the workspace-wide run observation, these entities answer for one runnable in particular,
@@ -166,9 +169,14 @@ runnable every five minutes, and the shared run window that already refreshes ev
 completion normally shows up within a minute, and the exact read is what keeps a rarely used job
 from reporting nothing.
 
-The last known values survive a restart. `Running` deliberately does not: a job that was executing
-before a restart is not necessarily executing after one, so the sensor starts off until the next
-observation.
+`Next run` is read from the job Windmill itself reserves in its queue for the next occurrence of a
+schedule — the integration never reads or writes schedules, and never evaluates a cron expression.
+A runnable without a schedule reports nothing, and disabling or deleting the schedule in Windmill
+clears the value within one refresh.
+
+The last known history survives a restart. `Running` and `Next run` deliberately do not: both
+describe what Windmill is doing right now, and a restart is exactly when a restored value would
+start claiming a run that finished or a schedule that was turned off in the meantime.
 
 Deselecting a runnable removes its device, its entities and its stored history on the next reload.
 
