@@ -3,88 +3,88 @@
   "config": {
     "step": {
       "user": {
-        "title": "Connect to Windmill",
-        "description": "Enter the Windmill instance URL and a token with at least `users:read` access. The token is only ever sent in an authorization header.",
+        "title": "Connect Windmill",
+        "description": "Enter the URL of your Windmill instance and a user token. The token requires at least the `users:read` permission.",
         "data": {
-          "base_url": "Base URL",
+          "base_url": "Instance URL",
           "token": "Token"
         },
         "data_description": {
-          "base_url": "For example {cloud_url} or the URL of your self-hosted instance. Plain HTTP works too, but sends the token unencrypted.",
-          "token": "A least-privilege Windmill user token. Add `workspaces:read` if you want to pick the workspace from a list."
+          "base_url": "Use {cloud_url} for Windmill Cloud, or enter the URL of your self-hosted instance. HTTP is supported, but transmits the token and data without encryption.",
+          "token": "Use a token with only the permissions you need. Add `workspaces:read` to select the workspace from a list."
         }
       },
       "workspace": {
         "title": "Select a workspace",
-        "description": "Choose the workspace this entry should monitor. If your token cannot list workspaces, type the workspace ID manually.",
+        "description": "Choose the workspace Home Assistant should use. If the token cannot list workspaces, enter the workspace ID manually.",
         "data": {
           "workspace": "Workspace"
         },
         "data_description": {
-          "workspace": "The workspace ID, not its display name."
+          "workspace": "Enter the workspace ID, not its display name."
         }
       },
       "capabilities": {
-        "title": "Detected capabilities",
-        "description": "Connected to {server} as {username} in workspace {workspace}.\n\nDetected support:\n- Instance health: {health}\n- Detailed health: {detailed_health}\n- Workers: {workers}\n- Runs: {runs}\n- Script discovery: {script_discovery}\n- Flow discovery: {flow_discovery}\n- Update check: {update_visibility}\n\n`unauthorized` means the token lacks that permission and `unsupported` means this Windmill deployment does not offer the endpoint. Either way, only the affected feature is unavailable. Running scripts and flows is never verified during setup, because that would have to start a job."
+        "title": "Connection verified",
+        "description": "Connected to {server} as {username}, workspace {workspace}.\n\nSupported features:\n- Instance status: {health}\n- Detailed system diagnostics: {detailed_health}\n- Workers: {workers}\n- Jobs: {runs}\n- Script discovery: {script_discovery}\n- Flow discovery: {flow_discovery}\n- Update detection: {update_visibility}\n\nThe status `unauthorized` means the token is missing a required permission. `unsupported` means the Windmill instance does not provide the required endpoint. Only the affected feature remains unavailable. Setup does not test running scripts or flows because doing so would start a job."
       },
       "features": {
         "title": "Select features",
-        "description": "Enable only what you need. Administrative and high-cardinality monitoring stays disabled unless you turn it on, and a feature whose capability is unavailable will simply create no entities.",
+        "description": "Choose which Windmill data and controls Home Assistant should provide. Features without the required permission or server support remain inactive.",
         "data": {
-          "instance_health": "Instance health",
-          "detailed_health": "Detailed health diagnostics",
+          "instance_health": "Instance status",
+          "detailed_health": "Detailed system diagnostics",
           "worker_groups": "Worker groups",
-          "worker_details": "Individual worker details",
-          "run_observation": "Job and run observation",
-          "update_entity": "Update availability",
-          "runnable_buttons": "Buttons for parameterless runnables",
-          "run_scope": "Run observation scope",
-          "runnable_details": "Job details per runnable"
+          "worker_details": "Individual workers",
+          "run_observation": "Job monitoring",
+          "update_entity": "Windmill update",
+          "runnable_buttons": "Run buttons",
+          "run_scope": "Jobs to monitor",
+          "runnable_details": "Script and flow details"
         },
         "data_description": {
-          "detailed_health": "Administrative: needs a token that Windmill accepts on the detailed health endpoint.",
-          "worker_groups": "Administrative: exposes alive workers and version drift per worker group.",
-          "worker_details": "High cardinality: adds one entity per worker instance and is meant for self-hosted operators.",
-          "update_entity": "Self-hosted only. Managed Windmill Cloud deployments are updated by Windmill.",
-          "runnable_buttons": "Optional: adds one button per selected runnable that needs no arguments. The action stays available either way.",
-          "run_scope": "Narrows the run sensors and the run event entity to selected scripts and flows or to jobs this integration started. A scope change never replays older completions.",
-          "runnable_details": "One device per selected script or flow with its last run, status, duration and next scheduled run."
+          "detailed_health": "Reads additional diagnostic data. The token must be allowed to access Windmill's detailed health endpoint.",
+          "worker_groups": "Shows active workers and differing Windmill versions for each worker group.",
+          "worker_details": "Creates a separate entity for every worker. This is primarily useful for self-hosted instances.",
+          "update_entity": "Available only for self-hosted instances. Windmill Cloud is updated automatically.",
+          "runnable_buttons": "Creates a button for every selected script or flow that has no input parameters. The run action remains available independently of this setting.",
+          "run_scope": "Controls which jobs are included in sensors and events. Changing the scope does not report previous completions again.",
+          "runnable_details": "Creates one device per selected script or flow with its last run, status, duration, and next scheduled run."
         }
       },
       "reauth_confirm": {
         "title": "Update the Windmill token",
-        "description": "Enter a new token for workspace {workspace} on {base_url}. The instance and workspace of this entry stay unchanged.",
+        "description": "Enter a new token for workspace {workspace} on {base_url}. The instance URL and workspace remain unchanged.",
         "data": {
           "token": "Token"
         }
       },
       "reconfigure": {
-        "title": "Reconfigure the Windmill connection",
-        "description": "Change the instance URL or workspace of this entry. Leave the token empty to keep the current one.",
+        "title": "Change the Windmill connection",
+        "description": "Change the instance URL or workspace. Leave the token empty to keep the stored token.",
         "data": {
-          "base_url": "Base URL",
+          "base_url": "Instance URL",
           "workspace": "Workspace",
           "token": "New token"
         },
         "data_description": {
-          "token": "Optional. The stored token is kept when this field stays empty."
+          "token": "Optional. Leave this field empty to keep the stored token."
         }
       }
     },
     "error": {
-      "cannot_connect": "Cannot connect to Windmill.",
-      "insufficient_permission": "The token cannot access this workspace.",
+      "cannot_connect": "Unable to connect to Windmill.",
+      "insufficient_permission": "The token is not allowed to access this workspace.",
       "invalid_auth": "The token is invalid.",
-      "invalid_url": "Enter a valid HTTP or HTTPS URL without credentials, query or fragment.",
+      "invalid_url": "Enter a valid HTTP or HTTPS URL without credentials, query parameters, or a fragment.",
       "invalid_workspace": "The workspace is invalid or unavailable.",
       "server_error": "Windmill is temporarily unavailable.",
-      "unexpected_response": "Windmill returned an unexpected response."
+      "unexpected_response": "The response from Windmill could not be processed."
     },
     "abort": {
       "already_configured": "This Windmill instance and workspace are already configured.",
-      "reauth_successful": "The Windmill token was updated.",
-      "reconfigure_successful": "The Windmill connection was updated."
+      "reauth_successful": "The Windmill token has been updated.",
+      "reconfigure_successful": "The Windmill connection has been updated."
     }
   },
   "entity": {
@@ -98,7 +98,7 @@
     },
     "sensor": {
       "instance_health": {
-        "name": "Health",
+        "name": "Instance status",
         "state": {
           "healthy": "Healthy",
           "degraded": "Degraded",
@@ -106,7 +106,7 @@
         }
       },
       "alive_workers": {
-        "name": "Alive workers"
+        "name": "Active workers"
       },
       "pending_jobs": {
         "name": "Pending jobs"
@@ -115,7 +115,7 @@
         "name": "Running jobs"
       },
       "worker_group_alive": {
-        "name": "{subject} workers"
+        "name": "{subject} active workers"
       },
       "worker_group_versions": {
         "name": "{subject} worker versions"
@@ -124,10 +124,10 @@
         "name": "Workers on {subject}"
       },
       "workspace_running_jobs": {
-        "name": "Running jobs (workspace)"
+        "name": "Running jobs in workspace"
       },
       "workspace_queued_jobs": {
-        "name": "Queued jobs (workspace)"
+        "name": "Queued jobs in workspace"
       },
       "last_successful_run": {
         "name": "Last successful run"
@@ -141,8 +141,8 @@
       "runnable_last_status": {
         "name": "Last status",
         "state": {
-          "success": "Success",
-          "failure": "Failure",
+          "success": "Successful",
+          "failure": "Failed",
           "canceled": "Canceled"
         }
       },
@@ -150,7 +150,7 @@
         "name": "Last duration"
       },
       "runnable_next_run": {
-        "name": "Next run"
+        "name": "Next scheduled run"
       }
     },
     "event": {
@@ -159,8 +159,8 @@
         "state_attributes": {
           "event_type": {
             "state": {
-              "success": "Success",
-              "failure": "Failure",
+              "success": "Successful",
+              "failure": "Failed",
               "canceled": "Canceled"
             }
           }
@@ -188,43 +188,43 @@
         }
       },
       "features": {
-        "title": "Windmill features",
-        "description": "Enable only the features you need. Changes reload the integration.",
+        "title": "Select features",
+        "description": "Choose which Windmill data and controls Home Assistant should provide. The integration reloads after you save the changes.",
         "data": {
-          "instance_health": "Instance health",
-          "detailed_health": "Detailed health diagnostics",
+          "instance_health": "Instance status",
+          "detailed_health": "Detailed system diagnostics",
           "worker_groups": "Worker groups",
-          "worker_details": "Individual worker details",
-          "run_observation": "Job and run observation",
-          "update_entity": "Update availability",
-          "runnable_buttons": "Buttons for parameterless runnables",
-          "run_scope": "Run observation scope",
-          "runnable_details": "Job details per runnable"
+          "worker_details": "Individual workers",
+          "run_observation": "Job monitoring",
+          "update_entity": "Windmill update",
+          "runnable_buttons": "Run buttons",
+          "run_scope": "Jobs to monitor",
+          "runnable_details": "Script and flow details"
         },
         "data_description": {
-          "detailed_health": "Administrative: needs a token that Windmill accepts on the detailed health endpoint.",
-          "worker_groups": "Administrative: exposes alive workers and version drift per worker group.",
-          "worker_details": "High cardinality: adds one entity per worker instance and is meant for self-hosted operators.",
-          "update_entity": "Self-hosted only. Managed Windmill Cloud deployments are updated by Windmill.",
-          "runnable_buttons": "Optional: adds one button per selected runnable that needs no arguments. The action stays available either way.",
-          "run_scope": "Narrows the run sensors and the run event entity to selected scripts and flows or to jobs this integration started. A scope change never replays older completions.",
-          "runnable_details": "One device per selected script or flow with its last run, status, duration and next scheduled run."
+          "detailed_health": "Reads additional diagnostic data. The token must be allowed to access Windmill's detailed health endpoint.",
+          "worker_groups": "Shows active workers and differing Windmill versions for each worker group.",
+          "worker_details": "Creates a separate entity for every worker. This is primarily useful for self-hosted instances.",
+          "update_entity": "Available only for self-hosted instances. Windmill Cloud is updated automatically.",
+          "runnable_buttons": "Creates a button for every selected script or flow that has no input parameters. The run action remains available independently of this setting.",
+          "run_scope": "Controls which jobs are included in sensors and events. Changing the scope does not report previous completions again.",
+          "runnable_details": "Creates one device per selected script or flow with its last run, status, duration, and next scheduled run."
         }
       },
       "runnables": {
         "title": "Select scripts and flows",
-        "description": "Only the runnables you select here can ever be exposed by Home Assistant. Discovery is bounded, so very large workspaces may not list every runnable.",
+        "description": "Only scripts and flows selected here can be run or monitored by Home Assistant. The list may be incomplete in very large workspaces.",
         "data": {
           "runnables": "Selected scripts and flows",
-          "pin_selected": "Pin newly selected runnables to their current version"
+          "pin_selected": "Pin newly selected items to their current version"
         },
         "data_description": {
-          "pin_selected": "Pinned scripts keep their current hash and pinned flows their current version. Runnables you already selected keep their existing mode."
+          "pin_selected": "Stores the current hash for scripts and the current version for flows. Previously selected items keep their existing setting."
         }
       }
     },
     "error": {
-      "too_many_runnables": "Select fewer runnables."
+      "too_many_runnables": "Select fewer scripts and flows."
     }
   },
   "selector": {
@@ -232,54 +232,54 @@
       "options": {
         "all": "All visible top-level jobs",
         "selected_runnables": "Selected scripts and flows",
-        "home_assistant_started": "Jobs started by Home Assistant"
+        "home_assistant_started": "Only jobs started by Home Assistant"
       }
     }
   },
   "services": {
     "run": {
       "name": "Run script or flow",
-      "description": "Starts a selected Windmill script or flow asynchronously and returns its job identifier.",
+      "description": "Runs a selected Windmill script or flow asynchronously and returns the job ID.",
       "fields": {
         "config_entry_id": {
-          "name": "Windmill workspace",
-          "description": "The configured Windmill instance and workspace to run in."
+          "name": "Windmill connection",
+          "description": "The instance and workspace in which the script or flow should run."
         },
         "kind": {
-          "name": "Kind",
-          "description": "Whether the runnable is a script or a flow."
+          "name": "Type",
+          "description": "Whether to run a script or a flow."
         },
         "path": {
           "name": "Path",
-          "description": "Path of a runnable you selected in the integration options."
+          "description": "Path of a script or flow selected in the integration options."
         },
         "arguments": {
           "name": "Arguments",
-          "description": "JSON-compatible arguments validated against the runnable's input schema."
+          "description": "Input values in JSON format. They are validated against the runnable's input schema."
         }
       }
     },
     "cancel": {
-      "name": "Cancel a job",
-      "description": "Cancels a job that Home Assistant started and still tracks.",
+      "name": "Cancel job",
+      "description": "Cancels a job that was started by Home Assistant and is still being tracked.",
       "fields": {
         "config_entry_id": {
-          "name": "Windmill workspace",
-          "description": "The configured Windmill instance and workspace the job belongs to."
+          "name": "Windmill connection",
+          "description": "The instance and workspace to which the job belongs."
         },
         "job_id": {
           "name": "Job ID",
-          "description": "Identifier returned by the run action."
+          "description": "The job ID returned by the Run script or flow action."
         }
       }
     }
   },
   "exceptions": {
     "unknown_config_entry": {
-      "message": "The selected Windmill entry does not exist."
+      "message": "The selected Windmill connection no longer exists."
     },
     "entry_not_loaded": {
-      "message": "The selected Windmill entry is not loaded."
+      "message": "The selected Windmill connection is not currently loaded."
     },
     "runnable_not_selected": {
       "message": "{path} is not selected in the Windmill integration options."
@@ -288,16 +288,16 @@
       "message": "{path} is currently unavailable in Windmill."
     },
     "runnable_unsupported": {
-      "message": "{path} has arguments this integration cannot validate."
+      "message": "The input parameters of {path} cannot be validated by this integration."
     },
     "runnable_missing": {
-      "message": "Windmill no longer knows {path}."
+      "message": "The script or flow {path} no longer exists in Windmill."
     },
     "invalid_arguments": {
-      "message": "The arguments are not JSON-compatible."
+      "message": "The input values must be valid JSON data."
     },
     "arguments_too_large": {
-      "message": "The arguments exceed the supported size."
+      "message": "The input values are too large."
     },
     "unknown_arguments": {
       "message": "Unknown arguments: {names}."
@@ -306,52 +306,52 @@
       "message": "Missing required arguments: {names}."
     },
     "invalid_argument_type": {
-      "message": "Argument {name} must be of type {type}."
+      "message": "A value of type {type} is required for {name}."
     },
     "invalid_argument_value": {
-      "message": "Argument {name} is not an allowed value."
+      "message": "The value for {name} is not allowed."
     },
     "invalid_auth": {
-      "message": "Windmill rejected the token."
+      "message": "Windmill rejected the token. Check the token or update the credentials."
     },
     "insufficient_permission": {
-      "message": "The token may not run {path}."
+      "message": "The token is not allowed to run {path}."
     },
     "cannot_connect": {
-      "message": "Cannot connect to Windmill."
+      "message": "Unable to connect to Windmill."
     },
     "server_error": {
       "message": "Windmill is temporarily unavailable."
     },
     "unexpected_response": {
-      "message": "Windmill returned an unexpected response."
+      "message": "The response from Windmill could not be processed."
     },
     "pin_unavailable": {
-      "message": "{path} is pinned, but Windmill does not expose a version to pin to. Select it again without pinning."
+      "message": "No version is available for {path}. Select the item again and disable version pinning."
     },
     "job_not_tracked": {
-      "message": "Home Assistant did not start job {job_id}, or it is no longer tracked."
+      "message": "Job {job_id} was not started by Home Assistant or is no longer being tracked."
     },
     "job_not_cancellable": {
-      "message": "Job {job_id} is already finished or cannot be cancelled."
+      "message": "Job {job_id} has already finished or cannot be canceled."
     }
   },
   "issues": {
     "insecure_transport": {
-      "title": "Windmill is reached over unencrypted HTTP",
-      "description": "This integration talks to `{host}` over plain HTTP, so the Windmill token and every job payload travel unencrypted and can be read or altered by anyone on the network path. This is accepted for a self-hosted instance without a certificate. To remove this message, put a TLS-terminating reverse proxy in front of Windmill and reconfigure the integration to the `https://` URL."
+      "title": "Windmill connection uses unencrypted HTTP",
+      "description": "The integration connects to `{host}` over HTTP. The token and job data are transmitted without encryption and can be read or modified on the network path. Use HTTPS whenever possible, for example through a TLS reverse proxy, and then update the integration URL."
     },
     "missing_permission": {
-      "title": "Windmill permission missing for an enabled feature",
-      "description": "The Windmill token used by this integration is not allowed to read `{capability}`, which the enabled `{feature}` feature needs. Grant the permission to the token in Windmill, or turn the feature off in the integration options. This message disappears on its own once the permission works again."
+      "title": "An enabled feature is missing a permission",
+      "description": "The token is not allowed to read `{capability}`, so the enabled `{feature}` feature cannot be used. Grant the required permission to the token or disable the feature in the integration options. This issue disappears automatically when access becomes available."
     },
     "unsupported_capability": {
       "title": "Windmill does not support an enabled feature",
-      "description": "This Windmill instance does not offer the `{capability}` endpoint that the enabled `{feature}` feature needs, usually because the server is older than the feature. Upgrade Windmill, or turn the feature off in the integration options."
+      "description": "The Windmill instance does not provide the `{capability}` endpoint required by `{feature}`. Update Windmill or disable the feature in the integration options."
     },
     "worker_version_drift": {
-      "title": "Windmill worker group runs several versions",
-      "description": "The `{group}` worker group has been running {versions} different Windmill versions for more than 30 minutes. During a rolling upgrade this is expected and no message is shown; lasting drift usually means a worker failed to upgrade. Check the workers of that group in Windmill."
+      "title": "Worker group uses different Windmill versions",
+      "description": "Worker group `{group}` has been using {versions} different Windmill versions for more than 30 minutes. This is expected during a rolling update. If the versions remain different, check whether one of the workers failed to update."
     }
   }
 }
