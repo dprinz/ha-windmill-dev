@@ -12,7 +12,7 @@ integration is ready for public testing, but its external installation base is s
 
 | Home Assistant | Status | Evidence |
 | --- | --- | --- |
-| 2026.7.4 | tested + live | pinned test baseline (`pytest-homeassistant-custom-component==0.13.348`, Python 3.14); the full 441-test suite runs against it, and release 0.3.1 runs live on Home Assistant OS 18.1 / core 2026.7.4 / Python 3.14.6 (see below) |
+| 2026.7.4 | tested + live | pinned test baseline (`pytest-homeassistant-custom-component==0.13.348`, Python 3.14); the full 441-test suite runs against it, and the integration runs live on Home Assistant OS 18.1 / core 2026.7.4 / Python 3.14.6 (see below) |
 | 2026.7.0 and newer 2026.7.x | supported | `hacs.json` minimum `2026.7.0` |
 | older than 2026.7.0 | untested | not claimed |
 
@@ -65,7 +65,9 @@ Observed (full output in the WMHA-0015 ticket evidence):
 
 Two config entries running in one real Home Assistant installation — Home Assistant OS 18.1,
 core `2026.7.4`, Python 3.14.6, `amd64` — read from the integration's own diagnostics. This is
-the first evidence from a full Home Assistant runtime rather than a client-level smoke.
+the first evidence from a full Home Assistant runtime rather than a client-level smoke. The
+integration code loaded at observation time was 0.3.0; the paths observed here are unchanged in
+0.3.1 and 0.3.2.
 
 | | Self-hosted CE `v1.768.0` | Windmill Cloud `EE v1.779.0` |
 | --- | --- | --- |
@@ -226,8 +228,9 @@ Recorded honestly instead of claimed:
   found and closed a real defect in flow version pinning. **What remains open:** no Cloud entry
   has yet been observed across a Home Assistant restart or a token rotation.
 - **Not verified: the WMHA-0045 fallback itself on Cloud.** The fix makes a `401` from the
-  instance-wide workspace listing degrade to manual workspace entry. The Cloud entry above was
-  created after the fix shipped, but its token reaches the instance-wide endpoints (both optional
-  probes returned `available`), so it is not established that this particular setup exercised the
-  fallback. The mapping is covered by unit tests and by the live probe recorded in WMHA-0045;
-  an end-to-end Cloud run with a token that cannot list workspaces is still missing.
+  instance-wide workspace listing degrade to manual workspace entry. The Cloud entry above did
+  not exercise it: HACS reported `pending-restart` at the time, so Home Assistant was still
+  running 0.3.0 when the entry was created, and the configured token reaches the instance-wide
+  endpoints anyway (both optional probes returned `available`). The mapping is covered by unit
+  tests and by the live probe recorded in WMHA-0045; an end-to-end Cloud setup with a token that
+  cannot list workspaces is still missing.
