@@ -3,14 +3,16 @@
 Current integration release: `0.3.1` (public beta).
 
 Status: public compatibility statement for release 0.3.1, updated on 2026-08-05. It states only
-what the available contract checks, automated tests and live-smoke evidence support. The
-integration is ready for public testing, but its external installation base is still small.
+what the available contract checks, automated tests and live evidence support. Since 0.3.1 that
+evidence includes two config entries running in a real Home Assistant installation — one
+self-hosted, one Windmill Cloud. The integration is ready for public testing, but its external
+installation base is still small.
 
 ## Supported Home Assistant versions
 
 | Home Assistant | Status | Evidence |
 | --- | --- | --- |
-| 2026.7.4 | tested | pinned test baseline (`pytest-homeassistant-custom-component==0.13.348`, Python 3.14); the full 439-test suite runs against it |
+| 2026.7.4 | tested + live | pinned test baseline (`pytest-homeassistant-custom-component==0.13.348`, Python 3.14); the full 439-test suite runs against it, and release 0.3.1 runs live on Home Assistant OS 18.1 / core 2026.7.4 / Python 3.14.6 (see below) |
 | 2026.7.0 and newer 2026.7.x | supported | `hacs.json` minimum `2026.7.0` |
 | older than 2026.7.0 | untested | not claimed |
 
@@ -19,10 +21,10 @@ integration is ready for public testing, but its external installation base is s
 | Windmill | Status | Evidence |
 | --- | --- | --- |
 | Self-hosted CE `v1.775.2` | verified contract + live smoke | API contract verified line-by-line against the pinned upstream sources (`docs/research/windmill-api-contract.md`); live client-level smoke against a local disposable Docker deployment on 2026-08-02 (see below) |
-| Self-hosted CE `v1.768.0` | public probes and live defect reproduction | read-only probe on 2026-08-02, followed by live observation of the `jobs/list` response shape on 2026-08-04; the latter produced and verified the run-observation fix released in 0.1.3 |
+| Self-hosted CE `v1.768.0` | live end-to-end in Home Assistant | read-only probe on 2026-08-02, live observation of the `jobs/list` response shape on 2026-08-04 (which produced the run-observation fix released in 0.1.3), and a continuously running config entry in Home Assistant since 2026-08-04 (see below) |
 | Self-hosted EE | contract-level | same pinned source; edition differences are capability-probed at runtime; no live EE instance was available |
 | Older self-hosted versions | degraded by design | endpoints introduced after a server's version probe as `unsupported` and disable only the affected feature; no minimum version is claimed |
-| Windmill Cloud (`EE v1.779.0`) | partially verified — beta risk | First live coverage on 2026-08-05 (WMHA-0045) with a throwaway account: version, coarse health, workspace `whoami`, and the `jobs`, `scripts` and `flows` listings answered `200`. The instance-wide endpoints `/api/workspaces/list`, `/api/users/whoami`, `/api/health/detailed` and `/api/workers/list` answered `401` for a workspace-bound token, so detailed health and worker details are expected to stay unavailable on Cloud. Execution, cancellation and run observation still have no live Cloud coverage |
+| Windmill Cloud (`EE v1.779.0`) | live end-to-end for connection, health, run observation and discovery | Running config entry in Home Assistant since 2026-08-05 (see below). Execution and cancellation still have no live Cloud coverage |
 
 ### Live smoke evidence (2026-08-02, disposable local CE `v1.775.2`)
 
@@ -31,7 +33,8 @@ Method: official `docker-compose.yml` from the Windmill repository at tag `v1.77
 (`smoke`) and a throwaway superadmin session token on a fresh database. The integration's own
 `WindmillClient`/`WindmillInstanceClient` drove every check. Containers, volumes and images were
 removed afterwards; no credential was committed. This is a client-level smoke, not a full Home
-Assistant end-to-end run — that boundary is stated deliberately.
+Assistant end-to-end run — that boundary is stated deliberately. It was crossed on 2026-08-05 by
+the running-installation evidence below.
 
 Observed (full output in the WMHA-0015 ticket evidence):
 
@@ -58,7 +61,44 @@ Observed (full output in the WMHA-0015 ticket evidence):
   `404` once; retrying moments later succeeded (upstream propagation race). The client maps this
   to a distinct typed error, so setup and actions report it cleanly.
 
-Cloud coverage is absent and is a stated public-beta risk, not a hidden assumption.
+### Live Home Assistant evidence (2026-08-05, release 0.3.1)
+
+Two config entries running in one real Home Assistant installation — Home Assistant OS 18.1,
+core `2026.7.4`, Python 3.14.6, `amd64` — read from the integration's own diagnostics. This is
+the first evidence from a full Home Assistant runtime rather than a client-level smoke.
+
+| | Self-hosted CE `v1.768.0` | Windmill Cloud `EE v1.779.0` |
+| --- | --- | --- |
+| Entry state | `loaded` | `loaded` |
+| Instance identity | `edition: ce`, `managed_cloud: false`, superadmin | `edition: ee`, `managed_cloud: true`, workspace admin |
+| Health / detailed health / workers | `available` | `available` |
+| Runs / script discovery / flow discovery | `available` | `available` |
+| Update visibility | `available` | `available` |
+| Execution / cancellation | `not_applicable` (`context_required`) | `not_applicable` (`context_required`) |
+
+Additionally observed:
+
+- **Every enabled coordinator reports `last_update_success: true`.** On the self-hosted entry that
+  is all seven — capabilities (6 h), health (60 s), workers (120 s), runs (60 s), runnables
+  (30 min), runnable runs (5 min) and update (6 h); on Cloud the three enabled ones.
+- **`runnable_details` runs live** on the self-hosted entry with one selected runnable in `latest`
+  mode, as do `worker_groups` and the update entity.
+- **The update entity works against a real server**: `v1.768.0` installed, `v1.780.0` latest, read
+  from `/api/uptodate`.
+- **Cloud detection works.** The Cloud entry is correctly classified `managed_cloud: true` from
+  `app.windmill.dev`, so the update entity is suppressed there exactly as designed — the first
+  live confirmation of that branch.
+- **The plain-HTTP repair issue fires live** (`insecure_transport`) for the self-hosted entry,
+  which is reached over `http://` — the WMHA-0036 behavior confirmed outside tests.
+
+Not covered by this evidence: execution and cancellation on Cloud (never probed at setup by
+design, and not exercised by hand), `runnable_buttons`, `worker_details`, and the detailed-health
+entities, whose options are off on both entries.
+
+One correction this evidence forced: an earlier draft of this document predicted that detailed
+health and worker details would stay unavailable on Windmill Cloud, because a workspace-bound
+token is refused on the instance-wide endpoints. Both probes returned `available` on Cloud with
+the token actually configured. Cloud availability therefore depends on the token, not on Cloud.
 
 ## Known limitations
 
@@ -83,10 +123,11 @@ These are accepted, documented trade-offs of the current public beta. Each links
    (ADR-0002, README *Worker entity lifecycle*).
 4. **More than 500 alive workers.** Worker counting walks at most five pages of 100; beyond that,
    counts are a documented lower bound (client policy).
-5. **Update entity eligibility.** The update entity never appears for Windmill Cloud, but a Cloud
-   tenant behind a custom domain cannot be detected; `update_entity` stays a deliberate opt-in.
-   The `/api/uptodate` check depends on the server reaching GitHub; any failure maps to `unknown`,
-   never to an error (WMHA-0011).
+5. **Update entity eligibility.** The update entity never appears for Windmill Cloud — confirmed
+   live on 2026-08-05, where `app.windmill.dev` was classified `managed_cloud: true` and the
+   entity was suppressed. A Cloud tenant behind a custom domain still cannot be detected, so
+   `update_entity` stays a deliberate opt-in. The `/api/uptodate` check depends on the server
+   reaching GitHub; any failure maps to `unknown`, never to an error (WMHA-0011).
 6. **Worker version drift grace period.** The worker-version repair fires only after 30 minutes of
    drift so rolling upgrades stay quiet; the 30 minutes are a judgement, not a measurement
    (WMHA-0012).
@@ -140,6 +181,16 @@ Recorded honestly instead of claimed:
   deduplicated by UUID and classified correctly, and no payload fields (args, results,
   logs, emails) entered the parsed model. This is still a synthetic load, not production
   scale; the polling bounds remain client policy validated by tests.
-- Windmill Cloud has no live coverage (see above) — **re-confirmed unverifiable 2026-08-02
-  (WMHA-0026):** no Cloud test tenant could be obtained without production credentials;
-  provisioning one remains a human decision.
+- ~~Windmill Cloud has no live coverage~~ **Largely closed 2026-08-05 (WMHA-0045):** a throwaway
+  Cloud account was provisioned and a config entry now runs against `app.windmill.dev`
+  (`EE v1.779.0`) in a real Home Assistant installation. Connection, capability discovery,
+  instance health, run observation and script/flow discovery are live-verified; Cloud detection
+  correctly suppresses the update entity. **What remains open:** execution and cancellation have
+  no live Cloud run, and no Cloud entry has yet been observed across a Home Assistant restart or
+  a token rotation.
+- **Not verified: the WMHA-0045 fallback itself on Cloud.** The fix makes a `401` from the
+  instance-wide workspace listing degrade to manual workspace entry. The Cloud entry above was
+  created after the fix shipped, but its token reaches the instance-wide endpoints (both optional
+  probes returned `available`), so it is not established that this particular setup exercised the
+  fallback. The mapping is covered by unit tests and by the live probe recorded in WMHA-0045;
+  an end-to-end Cloud run with a token that cannot list workspaces is still missing.

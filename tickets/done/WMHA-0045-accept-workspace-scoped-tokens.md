@@ -122,6 +122,7 @@ returns `403 Access denied. Required scope: users:read` on workspace `whoami`.
 | Lint (repository-wide) | `uv run ruff check .` | 4 pre-existing `E501` in `scripts/validate_repository.py`, untouched by this ticket; see follow-up |
 | Types | `uv run mypy custom_components/windmill` | passed — 16 source files |
 | Live reproduction | Probe table above against `app.windmill.dev` | passed 2026-08-05 |
+| Live acceptance | Repository owner set up a Windmill Cloud entry on release 0.3.1; entry `cloud-workspace` reports `loaded`, `managed_cloud: true`, `EE v1.779.0`, and every enabled coordinator reports `last_update_success: true` | passed 2026-08-05 |
 
 ## Review evidence
 
@@ -138,6 +139,11 @@ returns `403 Access denied. Required scope: users:read` on workspace `whoami`.
 - The `401` behaviour is verified against Windmill Cloud only. Self-hosted CE/EE may answer
   `403`; that path is unchanged and still maps to the same capability outcome.
 - No independent review yet, recorded above.
+- The live acceptance run does not prove the fallback path itself: the token configured in Home
+  Assistant reaches the instance-wide endpoints (both optional probes returned `available`), so
+  that setup may never have hit the `401` on workspace listing. The mapping is covered by unit
+  tests and the live probe; an end-to-end Cloud setup with a token that cannot list workspaces is
+  still missing.
 - 4 pre-existing `E501` violations in `scripts/validate_repository.py` are out of scope here
   and need their own ticket.
 

@@ -534,7 +534,9 @@ closed the restricted-token gates above:
 - One transient observation consistent with the WMHA-0015 propagation race: the `jobs/list`
   capability probe failed once when fired seconds after workspace creation, and succeeded on
   every repeat; not a client defect.
-- Cloud tenant behavior remains unverified — no test tenant exists (human decision).
+- Cloud tenant behavior was unverified at the time of this smoke; a throwaway tenant was
+  provisioned on 2026-08-05 and is covered by the instance-scope entry in the evidence ledger
+  above and by `docs/product/supported-versions-and-limitations.md`.
 
 ## Requirement traceability
 

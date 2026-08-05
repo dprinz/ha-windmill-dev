@@ -62,8 +62,12 @@ dated results in the WMHA-0026 ticket and `docs/product/supported-versions-and-l
    source predicted); unscoped token → `200`. The `400` surfaced as `unsupported` instead of
    `unauthorized` in capability discovery; fixed in WMHA-0030 (commit `e2f3395`), so capability
    discovery now reports it as `unauthorized` (corrected 2026-08-03 by the WMHA-0034 review).
-3. ~~Cloud tenant behavior for health and workers (WMHA-0005/0006)~~ — **re-confirmed
-   unverifiable 2026-08-02:** no Cloud test tenant exists; obtaining one is a human decision.
+3. ~~Cloud tenant behavior for health and workers (WMHA-0005/0006)~~ — **closed 2026-08-05
+   (WMHA-0045):** a throwaway Cloud tenant (`EE v1.779.0`) was provisioned and now runs as a
+   config entry in a real Home Assistant installation. Health, detailed health, workers, runs and
+   script/flow discovery all probed `available`; `managed_cloud` was detected correctly and
+   suppressed the update entity. Availability of the two administrative probes depends on the
+   token, not on Cloud. Execution and cancellation on Cloud remain without a live run.
 4. ~~Observation against a busy real workspace (WMHA-0007)~~ — **closed at synthetic-load level
    2026-08-02:** 9 concurrent jobs (success/failure/canceled) on a disposable workspace were all
    deduplicated and correctly classified through the bounded projection, with no payload fields
