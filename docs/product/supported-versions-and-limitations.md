@@ -1,8 +1,8 @@
 # Supported versions and known limitations
 
-Current integration release: `0.3.0` (public beta).
+Current integration release: `0.3.1` (public beta).
 
-Status: public compatibility statement for release 0.3.0, updated on 2026-08-04. It states only
+Status: public compatibility statement for release 0.3.1, updated on 2026-08-05. It states only
 what the available contract checks, automated tests and live-smoke evidence support. The
 integration is ready for public testing, but its external installation base is still small.
 
@@ -10,7 +10,7 @@ integration is ready for public testing, but its external installation base is s
 
 | Home Assistant | Status | Evidence |
 | --- | --- | --- |
-| 2026.7.4 | tested | pinned test baseline (`pytest-homeassistant-custom-component==0.13.348`, Python 3.14); the full 435-test suite runs against it |
+| 2026.7.4 | tested | pinned test baseline (`pytest-homeassistant-custom-component==0.13.348`, Python 3.14); the full 439-test suite runs against it |
 | 2026.7.0 and newer 2026.7.x | supported | `hacs.json` minimum `2026.7.0` |
 | older than 2026.7.0 | untested | not claimed |
 
@@ -22,7 +22,7 @@ integration is ready for public testing, but its external installation base is s
 | Self-hosted CE `v1.768.0` | public probes and live defect reproduction | read-only probe on 2026-08-02, followed by live observation of the `jobs/list` response shape on 2026-08-04; the latter produced and verified the run-observation fix released in 0.1.3 |
 | Self-hosted EE | contract-level | same pinned source; edition differences are capability-probed at runtime; no live EE instance was available |
 | Older self-hosted versions | degraded by design | endpoints introduced after a server's version probe as `unsupported` and disable only the affected feature; no minimum version is claimed |
-| Windmill Cloud | unverified — beta risk | no Cloud test tenant exists; behavior is designed from the contract (update entity `not_applicable`, instance-global health optional) but has no live coverage; re-confirmed unverifiable on 2026-08-02 (WMHA-0026) |
+| Windmill Cloud (`EE v1.779.0`) | partially verified — beta risk | First live coverage on 2026-08-05 (WMHA-0045) with a throwaway account: version, coarse health, workspace `whoami`, and the `jobs`, `scripts` and `flows` listings answered `200`. The instance-wide endpoints `/api/workspaces/list`, `/api/users/whoami`, `/api/health/detailed` and `/api/workers/list` answered `401` for a workspace-bound token, so detailed health and worker details are expected to stay unavailable on Cloud. Execution, cancellation and run observation still have no live Cloud coverage |
 
 ### Live smoke evidence (2026-08-02, disposable local CE `v1.775.2`)
 

@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-08-05
+
+### Fixed
+
+- Setup no longer rejects a valid Windmill Cloud token as invalid. A token bound
+  to one workspace works on every workspace endpoint but is refused with `401`
+  on the instance-wide ones, and Windmill Cloud answers `401` there rather than
+  the `403` this integration expected. Both the workspace listing during setup
+  and the optional instance-wide capability probes read that as a bad
+  credential and stopped onboarding with "The token is invalid."
+- Setup now falls back to typing the workspace name by hand when the workspace
+  listing is refused, and reports detailed health and worker details as
+  unavailable capabilities instead of failing the whole connection. A token that
+  really is invalid is still rejected — one step later, at workspace selection,
+  where `whoami` gives the authoritative answer.
+
 ## [0.3.0] - 2026-08-04
 
 ### Changed
