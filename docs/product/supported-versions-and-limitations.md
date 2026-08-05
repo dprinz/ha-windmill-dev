@@ -1,18 +1,18 @@
 # Supported versions and known limitations
 
-Current integration release: `0.3.1` (public beta).
+Current integration release: `0.3.2` (public beta).
 
-Status: public compatibility statement for release 0.3.1, updated on 2026-08-05. It states only
+Status: public compatibility statement for release 0.3.2, updated on 2026-08-05. It states only
 what the available contract checks, automated tests and live evidence support. Since 0.3.1 that
 evidence includes two config entries running in a real Home Assistant installation — one
-self-hosted, one Windmill Cloud. The integration is ready for public testing, but its external
-installation base is still small.
+self-hosted, one Windmill Cloud — plus live script and flow execution against Cloud. The
+integration is ready for public testing, but its external installation base is still small.
 
 ## Supported Home Assistant versions
 
 | Home Assistant | Status | Evidence |
 | --- | --- | --- |
-| 2026.7.4 | tested + live | pinned test baseline (`pytest-homeassistant-custom-component==0.13.348`, Python 3.14); the full 439-test suite runs against it, and release 0.3.1 runs live on Home Assistant OS 18.1 / core 2026.7.4 / Python 3.14.6 (see below) |
+| 2026.7.4 | tested + live | pinned test baseline (`pytest-homeassistant-custom-component==0.13.348`, Python 3.14); the full 441-test suite runs against it, and release 0.3.1 runs live on Home Assistant OS 18.1 / core 2026.7.4 / Python 3.14.6 (see below) |
 | 2026.7.0 and newer 2026.7.x | supported | `hacs.json` minimum `2026.7.0` |
 | older than 2026.7.0 | untested | not claimed |
 
