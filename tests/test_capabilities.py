@@ -168,6 +168,21 @@ async def test_capability_matrix_uses_safe_bounded_probes(
             CapabilityReason.PERMISSION_DENIED,
         ),
         (
+            # Both instance-scoped probes: Windmill Cloud answers a workspace-bound token
+            # with 401 here, which must degrade the capability and never abort discovery
+            # by propagating an authentication failure (WMHA-0045).
+            {"detailed_status": HTTPStatus.UNAUTHORIZED},
+            "detailed_health",
+            CapabilityStatus.UNAUTHORIZED,
+            CapabilityReason.PERMISSION_DENIED,
+        ),
+        (
+            {"workers_status": HTTPStatus.UNAUTHORIZED},
+            "workers",
+            CapabilityStatus.UNAUTHORIZED,
+            CapabilityReason.PERMISSION_DENIED,
+        ),
+        (
             # v1.775.2 scope middleware answers granular-scoped tokens with 400 on
             # detailed health (WMHA-0026); only this probe maps 400 to unauthorized.
             {"detailed_status": HTTPStatus.BAD_REQUEST},
@@ -318,11 +333,17 @@ async def test_runnable_probes_keep_the_strict_page_bound(
     assert matrix.runs.status is CapabilityStatus.AVAILABLE
 
 
-async def test_authenticated_probe_401_invalidates_authentication(
+async def test_workspace_scoped_probe_401_invalidates_authentication(
     hass: HomeAssistant, aioclient_mock: object
 ) -> None:
-    """An authenticated 401 remains distinct from optional permission denial."""
-    _mock_capabilities(aioclient_mock, workers_status=HTTPStatus.UNAUTHORIZED)
+    """A workspace-scoped 401 remains distinct from optional permission denial.
+
+    Narrowed by WMHA-0045: this still holds for a probe inside the workspace the token is
+    bound to, where a 401 really does mean the credential is bad. It no longer holds for
+    the instance-scoped probes, which Windmill Cloud refuses with 401 for a perfectly
+    valid workspace-bound token.
+    """
+    _mock_capabilities(aioclient_mock, runs_status=HTTPStatus.UNAUTHORIZED)
     client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
 
     with pytest.raises(WindmillAuthenticationError):

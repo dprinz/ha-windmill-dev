@@ -511,7 +511,9 @@ async def test_workspace_listing_rejects_invalid_models(
 @pytest.mark.parametrize(
     ("status", "exception_type"),
     [
-        (HTTPStatus.UNAUTHORIZED, WindmillAuthenticationError),
+        # Instance-scoped: Windmill Cloud refuses a workspace-bound token here with 401,
+        # which denies the endpoint rather than the credential (WMHA-0045).
+        (HTTPStatus.UNAUTHORIZED, WindmillAuthorizationError),
         (HTTPStatus.FORBIDDEN, WindmillAuthorizationError),
         (HTTPStatus.NOT_FOUND, WindmillNotFoundError),
         (HTTPStatus.SERVICE_UNAVAILABLE, WindmillServerError),
@@ -529,6 +531,18 @@ async def test_workspace_listing_status_mapping(
 
     with pytest.raises(exception_type):
         await client.async_list_workspaces()
+
+
+async def test_workspace_scoped_unauthorized_still_rejects_the_token(
+    hass: HomeAssistant, aioclient_mock: object
+) -> None:
+    """A 401 inside the workspace remains proof that the credential itself is bad."""
+    aioclient_mock.get(VERSION_URL, text="CE 1.775.2", headers=TEXT_HEADERS)  # type: ignore[attr-defined]
+    aioclient_mock.get(WHOAMI_URL, status=HTTPStatus.UNAUTHORIZED)  # type: ignore[attr-defined]
+    client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
+
+    with pytest.raises(WindmillAuthenticationError):
+        await client.async_connect()
 
 
 DETAILED_URL = f"{BASE_URL}/api/health/detailed"

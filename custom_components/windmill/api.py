@@ -532,13 +532,22 @@ class WindmillInstanceClient:
         return WindmillServerInfo(edition=edition, version=match.group("version"))
 
     async def async_list_workspaces(self) -> tuple[WindmillWorkspaceInfo, ...]:
-        """Return the bounded set of workspaces visible to the configured token."""
+        """Return the bounded set of workspaces visible to the configured token.
+
+        This is instance-scoped, so a workspace-bound token is refused with `401`. That is a
+        denial of this endpoint, not a rejected credential, and callers fall back to manual
+        workspace entry (WMHA-0045).
+        """
         response = await self._async_get(
             "/api/workspaces/list",
             authenticated=True,
             accept="application/json",
         )
-        self._raise_for_status(response, not_found=WindmillNotFoundError)
+        self._raise_for_status(
+            response,
+            not_found=WindmillNotFoundError,
+            authentication_required=False,
+        )
         return self._parse_workspaces(self._decode_json(response))
 
     async def async_get_health_status(self) -> WindmillHealthStatus:
@@ -812,14 +821,21 @@ class WindmillInstanceClient:
         not_found: type[WindmillError],
         authentication_required: bool = True,
     ) -> None:
-        """Map HTTP statuses to the stable typed client taxonomy."""
+        """Map HTTP statuses to the stable typed client taxonomy.
+
+        Set `authentication_required=False` for an endpoint whose `401` says nothing about
+        the credential itself: a public endpoint, or an instance-scoped one that a
+        workspace-bound token simply cannot address. Windmill Cloud answers `401` rather
+        than `403` in that second case (WMHA-0045), so only a workspace-scoped endpoint may
+        treat `401` as proof that the token is bad.
+        """
         status = response.status
         if status in success_statuses:
             return
         if status == 401:
             if authentication_required:
                 raise WindmillAuthenticationError("Windmill rejected the token")
-            raise WindmillAuthorizationError("Windmill denied the public probe")
+            raise WindmillAuthorizationError("Windmill denied the probe for this token")
         if status == 403:
             raise WindmillAuthorizationError("Windmill denied the request")
         if status == 404:
@@ -1051,6 +1067,10 @@ class WindmillClient(WindmillInstanceClient):
                 self._probe_json_object(
                     "/api/health/detailed",
                     authenticated=True,
+                    # Instance-scoped: a workspace-bound token is refused with 401 rather
+                    # than 403 on Windmill Cloud, and that must degrade this optional
+                    # capability instead of failing the credential (WMHA-0045).
+                    authentication_required=False,
                     body_statuses=frozenset({200, 503}),
                     # v1.775.2 has no `health` scope domain, so its scope middleware
                     # rejects granular-scoped tokens with 400 before the handler
@@ -1063,6 +1083,8 @@ class WindmillClient(WindmillInstanceClient):
                 self._probe_json_list(
                     "/api/workers/list",
                     params={**page.as_params(), "ping_since": 300},
+                    # Instance-scoped, same 401 semantics as detailed health (WMHA-0045).
+                    authentication_required=False,
                 )
             ),
             asyncio.create_task(
@@ -1261,6 +1283,7 @@ class WindmillClient(WindmillInstanceClient):
         path: str,
         *,
         authenticated: bool = True,
+        authentication_required: bool = True,
         body_statuses: frozenset[int] = frozenset({200}),
         scope_denied_statuses: frozenset[int] = frozenset(),
     ) -> CapabilityAvailability:
@@ -1281,6 +1304,7 @@ class WindmillClient(WindmillInstanceClient):
                 response,
                 success_statuses=body_statuses,
                 not_found=WindmillNotFoundError,
+                authentication_required=authentication_required,
             )
             self._parse_detailed_health(self._decode_json(response))
 
@@ -1292,6 +1316,7 @@ class WindmillClient(WindmillInstanceClient):
         *,
         params: Mapping[str, str | int],
         max_items: int = 1,
+        authentication_required: bool = True,
     ) -> CapabilityAvailability:
         """Probe a bounded list endpoint and discard every returned row.
 
@@ -1306,7 +1331,11 @@ class WindmillClient(WindmillInstanceClient):
                 accept="application/json",
                 params=params,
             )
-            self._raise_for_status(response, not_found=WindmillNotFoundError)
+            self._raise_for_status(
+                response,
+                not_found=WindmillNotFoundError,
+                authentication_required=authentication_required,
+            )
             payload = self._decode_json(response)
             if not isinstance(payload, list) or len(payload) > max_items:
                 raise WindmillProtocolError("Windmill returned an invalid bounded list")

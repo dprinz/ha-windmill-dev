@@ -430,6 +430,30 @@ async def test_workspace_listing_degrades_to_manual_entry(
     assert _schema_fields(result)[CONF_WORKSPACE] is str
 
 
+async def test_workspace_scoped_token_reaches_the_workspace_step(
+    hass: HomeAssistant, aioclient_mock: Any
+) -> None:
+    """A real 401 from the instance-scoped listing must not read as a bad credential.
+
+    Windmill Cloud refuses a workspace-bound token on `/api/workspaces/list` with 401
+    rather than 403, which previously ended onboarding with `invalid_auth` even though the
+    token worked inside its workspace (WMHA-0045). This drives the status mapping itself
+    instead of a patched client method.
+    """
+    aioclient_mock.get(
+        "https://windmill.example/api/version",
+        text="CE 1.775.2",
+        headers={"Content-Type": "text/plain"},
+    )
+    aioclient_mock.get("https://windmill.example/api/workspaces/list", status=401)
+
+    result = await _start_connection_step(hass, CONNECTION_INPUT)
+
+    assert result["step_id"] == "workspace"
+    assert result.get("errors") in (None, {})
+    assert _schema_fields(result)[CONF_WORKSPACE] is str
+
+
 async def test_connection_step_accepts_a_plain_http_instance(hass: HomeAssistant) -> None:
     """A self-hosted instance without a certificate is a supported deployment, not an error."""
     with patched_client():
