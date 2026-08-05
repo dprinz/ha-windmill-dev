@@ -1099,20 +1099,32 @@ async def test_runnable_details_project_schema_safely(
     assert "must-not-be-retained" not in repr(details)
 
 
-async def test_flow_details_use_version_when_present(
-    hass: HomeAssistant, aioclient_mock: object
+@pytest.mark.parametrize(
+    ("raw_version", "expected"),
+    [
+        # The real upstream field and type: `Flow.version_id` is a JSON number.
+        (139899, 139899),
+        # An exactly integral float must not silently disable pinning.
+        (139899.0, 139899),
+        # `version` is not a field of the flow object; accepting it once hid the defect.
+        (None, None),
+    ],
+)
+async def test_flow_details_use_version_id_when_present(
+    hass: HomeAssistant, aioclient_mock: object, raw_version: object, expected: int | None
 ) -> None:
     """A flow keeps its numeric version when the deployment exposes one."""
-    aioclient_mock.get(  # type: ignore[attr-defined]
-        FLOW_DETAIL_URL,
-        json={"path": "f/home/night", "summary": "Night", "version": 7, "schema": None},
-        headers=JSON_HEADERS,
-    )
+    body: dict[str, object] = {"path": "f/home/night", "summary": "Night", "schema": None}
+    if raw_version is not None:
+        body["version_id"] = raw_version
+    else:
+        body["version"] = 7
+    aioclient_mock.get(FLOW_DETAIL_URL, json=body, headers=JSON_HEADERS)  # type: ignore[attr-defined]
     client = WindmillClient(async_get_clientsession(hass), BASE_URL, WORKSPACE, TOKEN)
 
     details = await client.async_get_runnable(RunnableKind.FLOW, "f/home/night")
 
-    assert details.flow_version == 7
+    assert details.flow_version == expected
     assert details.script_hash is None
     assert details.schema_supported is True
 

@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Pinning a flow to its current version had no effect. Under **Configure →
+  Scripts and flows**, a flow selected with pinning enabled was still run at
+  its latest deployed version, because the client read a `version` field that
+  does not exist on Windmill's flow object — the addressable version is
+  `version_id`. Pinned scripts were never affected. Found by the first live
+  flow run against Windmill Cloud on 2026-08-05; the unit test that covered
+  this had invented the same non-existent field, so code and test agreed with
+  each other instead of with Windmill.
+
 ## [0.3.1] - 2026-08-05
 
 ### Fixed

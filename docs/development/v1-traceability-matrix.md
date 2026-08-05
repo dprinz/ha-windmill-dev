@@ -67,9 +67,10 @@ dated results in the WMHA-0026 ticket and `docs/product/supported-versions-and-l
    config entry in a real Home Assistant installation. Health, detailed health, workers, runs and
    script/flow discovery all probed `available`; `managed_cloud` was detected correctly and
    suppressed the update entity. Availability of the two administrative probes depends on the
-   token, not on Cloud. Script execution by path and by pinned hash, and cancellation, were run
-   live against Cloud through the integration's own client on the same day; only flow execution
-   remains without a live Cloud run.
+   token, not on Cloud. Script and flow execution — by path and by pinned hash/version — and
+   cancellation of both were run live against Cloud through the integration's own client on the
+   same day. That run found flow version pinning silently degrading to latest, because the client
+   read `version` where the flow object carries `version_id`; fixed and re-verified live.
 4. ~~Observation against a busy real workspace (WMHA-0007)~~ — **closed at synthetic-load level
    2026-08-02:** 9 concurrent jobs (success/failure/canceled) on a disposable workspace were all
    deduplicated and correctly classified through the bounded projection, with no payload fields

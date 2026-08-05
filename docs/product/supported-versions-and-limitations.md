@@ -24,7 +24,7 @@ installation base is still small.
 | Self-hosted CE `v1.768.0` | live end-to-end in Home Assistant | read-only probe on 2026-08-02, live observation of the `jobs/list` response shape on 2026-08-04 (which produced the run-observation fix released in 0.1.3), and a continuously running config entry in Home Assistant since 2026-08-04 (see below) |
 | Self-hosted EE | contract-level | same pinned source; edition differences are capability-probed at runtime; no live EE instance was available |
 | Older self-hosted versions | degraded by design | endpoints introduced after a server's version probe as `unsupported` and disable only the affected feature; no minimum version is claimed |
-| Windmill Cloud (`EE v1.779.0`) | live end-to-end | Running config entry in Home Assistant since 2026-08-05, plus a live client-driven run of script execution by path and by pinned hash, and of cancellation (see below). Flow execution has no live Cloud run |
+| Windmill Cloud (`EE v1.779.0`) | live end-to-end | Running config entry in Home Assistant since 2026-08-05, plus a live client-driven run of script and flow execution — by path and by pinned hash/version — and of cancellation for both (see below) |
 
 ### Live smoke evidence (2026-08-02, disposable local CE `v1.775.2`)
 
@@ -110,10 +110,26 @@ account, using a disposable Deno script that sleeps for a requested number of se
 | `async_run_runnable` by pinned script hash | job started, observed `success` |
 | `async_cancel_job` on a 300-second job | accepted, observed `canceled` |
 
+A disposable single-step flow was then driven the same way:
+
+| Step | Result |
+| --- | --- |
+| `async_list_runnables` (flows) | 1 flow, target found |
+| `async_get_runnable` | `version_id` resolved, 1 input parameter parsed |
+| `async_run_runnable` by path | job started, observed `success`, `kind=flow`, `duration_ms=134` |
+| `async_run_runnable` by pinned flow version | job started, observed `success` |
+| `async_cancel_job` on a 300-second flow | accepted, observed `canceled` |
+
 Each completion was observed through the same bounded `jobs/list` projection the run entities
-use, so the run-observation path is covered on Cloud as well. Flow execution was not run: the
-workspace has no flow, and the flow path differs from the script path only in the target segment,
-which is covered by tests and by the 2026-08-02 self-hosted smoke.
+use, so the run-observation path is covered on Cloud as well.
+
+**This run found a defect that no test had caught.** The first flow attempt resolved
+`flow_version = None`, so pinning a flow silently fell back to running the latest version. The
+client read a `version` field, but the pinned `Flow` schema and the live response both carry
+`version_id` and have no `version` at all. The unit test asserting the old behavior had invented
+the same wrong key, so code and test agreed with each other and not with Windmill. Fixed and
+re-verified live in the same session: `version_id=139899` resolved, and the pinned run completed
+`success` through `/jobs/run/fv/139899`.
 
 One correction this evidence forced: an earlier draft of this document predicted that detailed
 health and worker details would stay unavailable on Windmill Cloud, because a workspace-bound
@@ -206,9 +222,9 @@ Recorded honestly instead of claimed:
   (`EE v1.779.0`) in a real Home Assistant installation. Connection, capability discovery,
   instance health, run observation and script/flow discovery are live-verified; Cloud detection
   correctly suppresses the update entity; and a separate client-driven run covered script
-  execution by path and by pinned hash plus cancellation. **What remains open:** flow execution
-  has no live Cloud run, and no Cloud entry has yet been observed across a Home Assistant restart
-  or a token rotation.
+  and flow execution by path and by pinned hash/version plus cancellation of both. That run also
+  found and closed a real defect in flow version pinning. **What remains open:** no Cloud entry
+  has yet been observed across a Home Assistant restart or a token rotation.
 - **Not verified: the WMHA-0045 fallback itself on Cloud.** The fix makes a `401` from the
   instance-wide workspace listing degrade to manual workspace entry. The Cloud entry above was
   created after the fix shipped, but its token reaches the instance-wide endpoints (both optional

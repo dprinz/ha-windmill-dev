@@ -1387,7 +1387,15 @@ class WindmillClient(WindmillInstanceClient):
         script_hash = data.get("hash") if kind is RunnableKind.SCRIPT else None
         if script_hash is not None and not _is_bounded_text(str(script_hash)):
             raise WindmillProtocolError("Windmill returned an invalid script hash")
-        raw_version = data.get("version") if kind is RunnableKind.FLOW else None
+        # The flow object carries `version_id`, never `version` — the pinned `Flow` schema has
+        # no `version` field, confirmed live against Cloud EE v1.779.0 on 2026-08-05. Reading
+        # the wrong key silently disabled pinning: `flow_version` stayed `None`, so a flow the
+        # user had pinned ran at latest anyway.
+        raw_version = data.get("version_id") if kind is RunnableKind.FLOW else None
+        # v1.775.2 declares it as a JSON `number`. Deployments send an integer, but an exactly
+        # integral float must not silently disable pinning either.
+        if isinstance(raw_version, float) and raw_version.is_integer():
+            raw_version = int(raw_version)
         flow_version = raw_version if _is_count(raw_version) else None
         parameters, supported, reason = cls._project_schema(data.get("schema"))
         return RunnableDetails(
