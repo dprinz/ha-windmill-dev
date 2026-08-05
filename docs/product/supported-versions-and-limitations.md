@@ -24,7 +24,7 @@ installation base is still small.
 | Self-hosted CE `v1.768.0` | live end-to-end in Home Assistant | read-only probe on 2026-08-02, live observation of the `jobs/list` response shape on 2026-08-04 (which produced the run-observation fix released in 0.1.3), and a continuously running config entry in Home Assistant since 2026-08-04 (see below) |
 | Self-hosted EE | contract-level | same pinned source; edition differences are capability-probed at runtime; no live EE instance was available |
 | Older self-hosted versions | degraded by design | endpoints introduced after a server's version probe as `unsupported` and disable only the affected feature; no minimum version is claimed |
-| Windmill Cloud (`EE v1.779.0`) | live end-to-end for connection, health, run observation and discovery | Running config entry in Home Assistant since 2026-08-05 (see below). Execution and cancellation still have no live Cloud coverage |
+| Windmill Cloud (`EE v1.779.0`) | live end-to-end | Running config entry in Home Assistant since 2026-08-05, plus a live client-driven run of script execution by path and by pinned hash, and of cancellation (see below). Flow execution has no live Cloud run |
 
 ### Live smoke evidence (2026-08-02, disposable local CE `v1.775.2`)
 
@@ -91,9 +91,29 @@ Additionally observed:
 - **The plain-HTTP repair issue fires live** (`insecure_transport`) for the self-hosted entry,
   which is reached over `http://` — the WMHA-0036 behavior confirmed outside tests.
 
-Not covered by this evidence: execution and cancellation on Cloud (never probed at setup by
-design, and not exercised by hand), `runnable_buttons`, `worker_details`, and the detailed-health
-entities, whose options are off on both entries.
+Not covered by this evidence: `runnable_buttons`, `worker_details`, and the detailed-health
+entities, whose options are off on both entries. Execution and cancellation are covered by the
+separate Cloud run below.
+
+### Live Cloud execution and cancellation (2026-08-05, `EE v1.779.0`)
+
+Capability discovery deliberately never probes execution, so this needed its own run. The
+integration's own `WindmillClient` drove every step against `app.windmill.dev` on a throwaway
+account, using a disposable Deno script that sleeps for a requested number of seconds:
+
+| Step | Result |
+| --- | --- |
+| `async_connect` | `ee v1.779.0` |
+| `async_list_runnables` | 1 script, target found |
+| `async_get_runnable` | hash resolved, 1 input parameter parsed |
+| `async_run_runnable` by path | job started, observed `success`, `duration_ms=69` |
+| `async_run_runnable` by pinned script hash | job started, observed `success` |
+| `async_cancel_job` on a 300-second job | accepted, observed `canceled` |
+
+Each completion was observed through the same bounded `jobs/list` projection the run entities
+use, so the run-observation path is covered on Cloud as well. Flow execution was not run: the
+workspace has no flow, and the flow path differs from the script path only in the target segment,
+which is covered by tests and by the 2026-08-02 self-hosted smoke.
 
 One correction this evidence forced: an earlier draft of this document predicted that detailed
 health and worker details would stay unavailable on Windmill Cloud, because a workspace-bound
@@ -181,13 +201,14 @@ Recorded honestly instead of claimed:
   deduplicated by UUID and classified correctly, and no payload fields (args, results,
   logs, emails) entered the parsed model. This is still a synthetic load, not production
   scale; the polling bounds remain client policy validated by tests.
-- ~~Windmill Cloud has no live coverage~~ **Largely closed 2026-08-05 (WMHA-0045):** a throwaway
-  Cloud account was provisioned and a config entry now runs against `app.windmill.dev`
+- ~~Windmill Cloud has no live coverage~~ **Closed 2026-08-05 (WMHA-0045):** a throwaway Cloud
+  account was provisioned and a config entry now runs against `app.windmill.dev`
   (`EE v1.779.0`) in a real Home Assistant installation. Connection, capability discovery,
   instance health, run observation and script/flow discovery are live-verified; Cloud detection
-  correctly suppresses the update entity. **What remains open:** execution and cancellation have
-  no live Cloud run, and no Cloud entry has yet been observed across a Home Assistant restart or
-  a token rotation.
+  correctly suppresses the update entity; and a separate client-driven run covered script
+  execution by path and by pinned hash plus cancellation. **What remains open:** flow execution
+  has no live Cloud run, and no Cloud entry has yet been observed across a Home Assistant restart
+  or a token rotation.
 - **Not verified: the WMHA-0045 fallback itself on Cloud.** The fix makes a `401` from the
   instance-wide workspace listing degrade to manual workspace entry. The Cloud entry above was
   created after the fix shipped, but its token reaches the instance-wide endpoints (both optional
